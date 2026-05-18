@@ -1,0 +1,3 @@
+[submodule "LPCreditEnclaves/lib/forge-std"]
+	path = LPCreditEnclaves/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
