@@ -42,11 +42,13 @@ contract AccountingManager {
 
     // This function registers a specific type of positions for enclaves for Operators and Lenders. Type 3.
 
-    function initializePositionForUser(address _user, bytes[] memory _newPositionData) public onlyEnclave {
+    function initializePositionForUser(address _user, bytes[] memory _newPositionData) public onlyEnclave returns(uint256) {
+
+        ISendraStorage sendraStorage = ISendraStorage(addressProvider.getAddress("SendraStorage"));
 
         uint256 positionId = sendraStorage.getUser(_user).totalPositions + 1;
 
-        ISendraStorage(addressProvider.getAddress("SendraStorage")).addPositionToUser(_user, SendraLib.Position({
+        sendraStorage.addPositionToUser(_user, SendraLib.Position({
             positionType: 3, // ENCLAVE Uniswap LP Position
             id: positionId,
             pnl: 0,
@@ -54,6 +56,7 @@ contract AccountingManager {
             positionData: _newPositionData
         }));
     
+        return positionId;
     }
 
     function managePositionForEnclave(uint256 positionId, uint256 positionField, bytes memory value) public onlyEnclave {

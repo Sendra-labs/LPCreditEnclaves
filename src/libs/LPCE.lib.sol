@@ -15,6 +15,8 @@ library LPCE {
         bool isDeposited;
         uint256 creditInUsd;
         uint256 operatorFee;
+        uint256 lenderPositionId;
+        uint256 operatorPositionId;
         string description;
     }
 

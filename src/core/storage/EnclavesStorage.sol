@@ -43,6 +43,13 @@ contract EnclavesStorage {
         enclaveById[enclaveIdByAddress[msg.sender]].isDeposited = true;
     }
 
+    function setLenderPositionId(uint256 _lenderPositionId) public {
+        enclaveById[enclaveIdByAddress[msg.sender]].lenderPositionId = _lenderPositionId;
+    }
+
+    function setOperatorPositionId(uint256 _operatorPositionId) public {
+        enclaveById[enclaveIdByAddress[msg.sender]].operatorPositionId = _operatorPositionId;
+    }
 
     // VIEW FUNCTIONS
 

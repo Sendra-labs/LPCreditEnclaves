@@ -114,7 +114,8 @@ contract LiquidityLogic {
     }
 
     function depositCredit(uint256 creditInUsd) public onlyNotDeposited {
-        EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage")).setIsDeposited();
+        EnclavesStorage enclaveStorage = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage"));
+        enclaveStorage.setIsDeposited();
         IERC20(IAddressProvider(addressProvider).getAddress("USDC")).transferFrom(msg.sender, address(this), creditInUsd);
 
         bytes[] memory positionData = new bytes[](6);
@@ -125,7 +126,10 @@ contract LiquidityLogic {
         positionData[4] = abi.encode(0); // final Value
         positionData[5] = abi.encode(0); // final date
 
-        AccountingManager(ISendraAddressProvider(addressProvider).getAddress("AccountingManager")).initializePositionForUser(msg.sender, positionData);
+        uint256 lenderPositionId = AccountingManager(ISendraAddressProvider(addressProvider).getAddress("AccountingManager")).initializePositionForUser(msg.sender, positionData);
+
+        enclaveStorage.setLenderPositionId(lenderPositionId);
+        
         emit CreditDeposited(msg.sender, creditInUsd);
     }
 
@@ -148,9 +152,11 @@ contract LiquidityLogic {
         uint256 lenderProfit = profit - operatorProfit;
         address operator = enclave.operator;
         address lender = enclave.lender;
+        uint256 lenderPositionId = enclave.lenderPositionId;
+        uint256 operatorPositionId = enclave.operatorPositionId;
 
-        lenderPosition = sendraStorage.getUserPositionById(lender, userInfo.totalPositions);
-        operatorPosition = sendraStorage.getUserPositionById(operator, userInfo.totalPositions);
+        SendraLib.Position memory lenderPosition = sendraStorage.getUserPositionById(lender, lenderPositionId);
+        SendraLib.Position memory operatorPosition = sendraStorage.getUserPositionById(operator, operatorPositionId);
 
         if(profit > 0) {
             IERC20(IAddressProvider(addressProvider).getAddress("USDC")).transfer(lender, lenderProfit + initialCredit);
