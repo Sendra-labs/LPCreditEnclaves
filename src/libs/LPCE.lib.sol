@@ -15,8 +15,9 @@ library LPCE {
         bool isDeposited;
         uint256 creditInUsd;
         uint256 operatorFee;
-        uint256 lenderPositionId;
-        uint256 operatorPositionId;
+        uint256 lenderPositionId; // sendra position id of the lender
+        uint256 operatorPositionId; // sendra position id of the operator
+        uint256 batchId;
         string description;
     }
 

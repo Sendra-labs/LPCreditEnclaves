@@ -44,7 +44,7 @@ contract LiquidityCreditEnclaveFactory {
         deployParams.functionSelectorRules = functionSelectorRules;
         deployParams.functionSelectors = functionSelectors;
 
-        /*address sendraExecutor = */ RPFPDeployer(addressProvider.getAddress("RPFPDeployer")).deployRPFP(deployParams); // MUST RETURN ADDRESS OF THE EXECUTOR
+        /*address sendraExecutor, uint256 rpfpId = */ RPFPDeployer(addressProvider.getAddress("RPFPDeployer")).deployRPFP(deployParams); // MUST RETURN ADDRESS OF THE EXECUTOR and rpfpId
 
         LPCE.Enclave memory enclave = LPCE.Enclave({
             operator: params.allowedOperator,
@@ -53,18 +53,32 @@ contract LiquidityCreditEnclaveFactory {
             isPaused: false,
             isDeposited: false,
             creditInUsd: params.creditInUsd,
+            lenderPositionId: 0,
+            operatorPositionId: 0,
             operatorFee: params.operatorFee,
+            batchId: 0,
             description: params.description
         });
 
-        EnclavesStorage(addressProvider.getAddress("EnclavesStorage")).createEnclave(enclave);
+        uint256 enclaveId = EnclavesStorage(addressProvider.getAddress("EnclavesStorage")).createEnclave(enclave);
 
         AccessControlInter(addressProvider.getAddress("AccessControlInter")).setIsSendraEnclave(sendraExecutor, true);
+
+        sendraExecutor.execute(
+            SRPELib.ExecutionParams({
+            targetFunction: 6, // initializeOperatorPosition Not used ¿?¿?
+            rpfpId: /*rpfpId*/,
+            actionData: abi.encodeWithSelector(LiquidityLogic.initializeOperatorPosition.selector)
+        }));
 
         emit EnclaveCreated(enclaveId, sendraExecutor);
 
         return (enclaveId, sendraExecutor);
 
+    }
+
+    function acceptOffer(uint256 _batchId, uint256 _enclaveId) public {
+        EnclavesStorage(addressProvider.getAddress("EnclavesStorage")).acceptOffer(_batchId, _enclaveId);
     }
 
     function createRules(
@@ -75,100 +89,142 @@ contract LiquidityCreditEnclaveFactory {
             uint256 operatorFee, 
             address allowedOperator,
             address[] memory allowedTokens
-        ) internal view returns (SRPELib.Rules memory rules, bytes4[] memory functionSelectors) {
+        ) internal view returns (SRPELib.Rules[] memory functionSelectorRules, bytes4[] memory functionSelectors) {
         
         if(minUsdcPerTx == 0) revert MinUsdcPerTxCannotBeZero();
         if(maxUsdcPerTx < minUsdcPerTx) revert MaxUsdcPerTxCannotBeLessThanMinUsdcPerTx();
         if(maxUsdcPerTx == 0) revert MaxUsdcPerTxCannotBeZero();
         if(deadline <= block.timestamp) revert DeadlineCannotBeInThePast();
 
-        rules = SRPELib.Rules(
-            {
-                ruleCount: 8,
-                rules: new SRPELib.Rule[](8)
-            }
-        );
+        
+        functionSelectorRules = new SRPELib.Rules[](7);
 
-        functionSelectors = new bytes4[](8);
+        functionSelectors = new bytes4[](7);
 
         // Provide Liquidity
         functionSelectors[0] = LiquidityLogic.provideLiquidity.selector;
 
-        rules.rules[0] = SRPELib.Rule({
-            ruleType: 8,
-            ruleData: abi.encode(minUsdcPerTx, maxUsdcPerTx),
-            extraData: abi.encode(uint256(0)) // paramIndex of the usdc amount
-        });
- 
-        // Time limit
-        functionSelectors[1] = LiquidityLogic.provideLiquidity.selector;
+            functionSelectorRules[0] = SRPELib.Rules({
+                ruleCount: 3,
+                rules: new SRPELib.Rule[](3)
+            });
 
-        rules.rules[1] = SRPELib.Rule({
-            ruleType: 3,
-            ruleData: abi.encode(deadline, uint256(0)), 
-            extraData: ""
-        });
+            // Usdc amount limits
+            functionSelectorRules[0].rules[0] = SRPELib.Rule({
+                ruleType: 8,
+                ruleData: abi.encode(minUsdcPerTx, maxUsdcPerTx),
+                extraData: abi.encode(uint256(0)) // paramIndex of the usdc amount
+            });
+    
+            // Time limit
+            functionSelectorRules[0].rules[1] = SRPELib.Rule({
+                ruleType: 3,
+                ruleData: abi.encode(deadline, uint256(0)), 
+                extraData: ""
+            });
 
 
-        // Allow specific operator
-        functionSelectors[2] = LiquidityLogic.provideLiquidity.selector;
+            // Allow specific operator
+            functionSelectorRules[0].rules[2] = SRPELib.Rule({
+                ruleType: 5,
+                ruleData: abi.encode(functionSelectors[0], allowedOperator),
+                extraData: ""
+            });
 
-        rules.rules[2] = SRPELib.Rule({
-            ruleType: 5,
-            ruleData: abi.encode(functionSelectors[2], allowedOperator),
-            extraData: ""
-        });
+        // withdraw credit
+        functionSelectors[1] = LiquidityLogic.withdrawCredit.selector;
 
-        address[] memory allowedSenders = new address[](2);
-        allowedSenders[0] = msg.sender;
-        allowedSenders[1] = allowedOperator;
-
-        // Withdraw Credit can be signed by the operator or the lender and logic sends the capital between both.
-        functionSelectors[3] = LiquidityLogic.withdrawCredit.selector;
-
-        rules.rules[3] = SRPELib.Rule({
-            ruleType: 1,
-            ruleData: abi.encode(allowedSenders),
-            extraData: ""
+        functionSelectorRules[1] = SRPELib.Rules({
+            ruleCount: 1,
+            rules: new SRPELib.Rule[](1)
         });
 
-        functionSelectors[4] = LiquidityLogic.closePosition.selector; 
+            address[] memory allowedSenders = new address[](2);
+            allowedSenders[0] = msg.sender;
+            allowedSenders[1] = allowedOperator;
 
-        rules.rules[4] = SRPELib.Rule({
-            ruleType: 1,
-            ruleData: abi.encode(allowedSenders),
-            extraData: ""
+            // Withdraw Credit can be signed by the operator or the lender and logic sends the capital between both.
+            functionSelectorRules[1].rules[0] = SRPELib.Rule({
+                ruleType: 1,
+                ruleData: abi.encode(allowedSenders),
+                extraData: ""
+            });
+
+
+        // close position
+
+        functionSelectors[2] = LiquidityLogic.closePosition.selector; 
+
+        functionSelectorRules[2] = SRPELib.Rules({
+            ruleCount: 1,
+            rules: new SRPELib.Rule[](1)
         });
 
-        functionSelectors[5] = LiquidityLogic.depositCredit.selector;
+            functionSelectorRules[2].rules[0] = SRPELib.Rule({
+                ruleType: 1,
+                ruleData: abi.encode(allowedSenders),
+                extraData: ""
+            });
 
-        rules.rules[5] = SRPELib.Rule({
-            ruleType: 6,
-            ruleData: abi.encode(functionSelectors[5], msg.sender, uint256(0), abi.encode(creditInUsd)), // paramIndex of the creditInUsd
-            extraData: ""
+
+        // deposit credit
+        functionSelectors[3] = LiquidityLogic.depositCredit.selector;
+
+        functionSelectorRules[3] = SRPELib.Rules({
+            ruleCount: 1,
+            rules: new SRPELib.Rule[](1)
         });
 
-        // Only Lender can pause operations
-        functionSelectors[6] = LiquidityLogic.pauseExecution.selector;
+            functionSelectorRules[3].rules[0] = SRPELib.Rule({
+                ruleType: 6,
+                ruleData: abi.encode(functionSelectors[3], msg.sender, uint256(0), abi.encode(creditInUsd)), // paramIndex of the creditInUsd
+                extraData: ""
+            });
 
-        rules.rules[6] = SRPELib.Rule({
-            ruleType: 5,
-            ruleData: abi.encode(functionSelectors[6], msg.sender),
-            extraData: ""
+
+        // pause execution
+        functionSelectors[4] = LiquidityLogic.pauseExecution.selector;
+
+        functionSelectorRules[4] = SRPELib.Rules({
+            ruleCount: 1,
+            rules: new SRPELib.Rule[](1)
         });
 
-        functionSelectors[7] = LiquidityLogic.unpauseExecution.selector;
+            functionSelectorRules[4].rules[0] = SRPELib.Rule({
+                ruleType: 5,
+                ruleData: abi.encode(functionSelectors[4], msg.sender),
+                extraData: ""
+            });
 
-        rules.rules[7] = SRPELib.Rule({
-            ruleType: 5,
-            ruleData: abi.encode(functionSelectors[7], msg.sender),
-            extraData: ""
+        // unpause execution
+        functionSelectors[5] = LiquidityLogic.unpauseExecution.selector;
+
+        functionSelectorRules[5] = SRPELib.Rules({
+            ruleCount: 1,
+            rules: new SRPELib.Rule[](1)
         });
 
-        // each new rule must add 1 to the functionSelectors length and rules.ruleCount
+            functionSelectorRules[5].rules[0] = SRPELib.Rule({
+                ruleType: 5,
+                ruleData: abi.encode(functionSelectors[5], msg.sender),
+                extraData: ""
+            });
 
-        return (rules, functionSelectors);
+        // initialize operator position
+        functionSelectors[6] = LiquidityLogic.initializeOperatorPosition.selector;
 
+        functionSelectorRules[6] = SRPELib.Rules({
+            ruleCount: 1,
+            rules: new SRPELib.Rule[](1)
+        });
+
+            functionSelectorRules[6].rules[0] = SRPELib.Rule({
+                ruleType: 5,
+                ruleData: abi.encode(functionSelectors[6], address(this)),
+                extraData: ""
+            });
+
+        return (functionSelectorRules, functionSelectors);
     }
 
     event EnclaveCreated(uint256 indexed enclaveId, address indexed sendraExecutor);

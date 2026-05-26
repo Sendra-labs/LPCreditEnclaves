@@ -38,6 +38,23 @@ contract LiquidityLogic {
         _;
     }
 
+    function initializeOperatorPosition() public {
+        EnclavesStorage enclaveStorage = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage"));
+        LPCE.Enclave memory enclave = enclaveStorage.getEnclaveByAddress(address(this));
+        if(enclave.operatorPositionId > 0) revert OperatorPositionAlreadyInitialized();
+        bytes[] memory positionData = new bytes[](7);
+        positionData[0] = abi.encode(enclave.creditInUsd); // initial Credit under management
+        positionData[1] = abi.encode(block.timestamp); // initial date
+        positionData[2] = abi.encode(address(this)); // address of the enclave
+        positionData[3] = abi.encode(enclave.operatorFee); // operator fee
+        positionData[4] = abi.encode(0); // final Value
+        positionData[5] = abi.encode(0); // final date
+        positionData[6] = abi.encode(0); // Operator profit
+
+        uint256 operatorPositionId = AccountingManager(ISendraAddressProvider(addressProvider).getAddress("AccountingManager")).initializePositionForUser(enclave.operator, positionData);
+        enclaveStorage.setOperatorPositionId(operatorPositionId);
+    }
+
     function provideLiquidity(
             uint256 usdcAmount,
             uint256 amount0,
@@ -183,6 +200,9 @@ contract LiquidityLogic {
         AccountingManager(managerAddress).decreaseGlobalPositionActivePositions(lender);
         AccountingManager(managerAddress).decreaseGlobalPositionActivePositions(operator);
 
+        enclaveStorage.removeEnclaveFromUser(lender, 0, enclave.enclaveId);
+        enclaveStorage.removeEnclaveFromUser(operator, 1, enclave.enclaveId);
+
         emit CreditWithdrawn(lender, lenderProfit + initialCredit, operator, operatorProfit);
 
     }
@@ -205,4 +225,5 @@ contract LiquidityLogic {
     error Paused();
     error Deposited();
     error PositionsNotClosed();
+    error OperatorPositionAlreadyInitialized();
 }
