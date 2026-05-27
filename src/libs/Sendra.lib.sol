@@ -16,25 +16,25 @@ library SendraLib {
     }
 
     struct GlobalAccumulators {
-        uint256 totalCapitalIn;
-        uint256 totalCapitalOut;
-        uint256 peakSimultaneousExposure;
-        uint256 currentExposure;
-        int256 cumulativeRealizedPnl;
-        uint256 grossProfit;
-        uint256 grossLoss;
-        int256 highWaterMark;
-        uint256 maxDrawdown;
-        uint256 totalPositionsOpened;
-        uint256 totalPositionsClosed;
-        uint256 winCount;
-        uint256 lossCount;
-        uint256 totalDurationSeconds;
-        uint256 firstActivityTimestamp;
-        uint256 lastActivityTimestamp;
+        uint256 totalCapitalIn; // lender
+        uint256 totalCapitalOut; // lender
+        uint256 peakSimultaneousExposure; // lender
+        uint256 currentExposure; // lender
+        int256 cumulativeRealizedPnl; // lender
+        uint256 grossProfit; // lender
+        uint256 grossLoss; // lender
+        int256 highWaterMark; // lender
+        uint256 maxDrawdown; // lender
+        uint256 totalPositionsOpened; // operator each and lender
+        uint256 totalPositionsClosed; // operator each and lender
+        uint256 winCount; // operator each and lender
+        uint256 lossCount; // operator each and lender
+        uint256 totalDurationSeconds; // operator each and lender
+        uint256 firstActivityTimestamp; // operator and lender
+        uint256 lastActivityTimestamp; // operator and lender
         uint256 totalLiquidationEvents;
-        uint256 consecutiveLosses;
-        uint256 maxConsecutiveLosses;
+        uint256 consecutiveLosses; // operator
+        uint256 maxConsecutiveLosses; // operator
     }
 
     struct SpecificAccumulators {
