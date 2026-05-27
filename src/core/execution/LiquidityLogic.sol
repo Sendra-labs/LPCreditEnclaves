@@ -72,7 +72,7 @@ contract LiquidityLogic {
 
             address liquidityOrchestrator = ISendraAddressProvider(addressProvider).getAddress("LiquidityOrchestratorEvo");
             
-            IERC20(IAddressProvider(addressProvider).getAddress("USDC")).approve(liquidityOrchestrator, usdcAmount);
+            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).approve(liquidityOrchestrator, usdcAmount);
             
             ILiquidityOrchestratorEvo executor = ILiquidityOrchestratorEvo(liquidityOrchestrator);
 
@@ -133,7 +133,7 @@ contract LiquidityLogic {
     function depositCredit(uint256 creditInUsd) public onlyNotDeposited {
         EnclavesStorage enclaveStorage = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage"));
         enclaveStorage.setIsDeposited();
-        IERC20(IAddressProvider(addressProvider).getAddress("USDC")).transferFrom(msg.sender, address(this), creditInUsd);
+        IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transferFrom(msg.sender, address(this), creditInUsd);
 
         bytes[] memory positionData = new bytes[](6);
         positionData[0] = abi.encode(creditInUsd);
@@ -162,7 +162,7 @@ contract LiquidityLogic {
         
         uint256 initialCredit = enclave.creditInUsd;
         
-        uint256 currentValue = IERC20(IAddressProvider(addressProvider).getAddress("USDC")).balanceOf(address(this));
+        uint256 currentValue = IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).balanceOf(address(this));
         uint256 operatorFee = enclave.operatorFee;
         uint256 profit = currentValue > initialCredit ? currentValue - initialCredit : 0;
         uint256 operatorProfit = profit * operatorFee / 100;
@@ -176,15 +176,15 @@ contract LiquidityLogic {
         SendraLib.Position memory operatorPosition = sendraStorage.getUserPositionById(operator, operatorPositionId);
 
         if(profit > 0) {
-            IERC20(IAddressProvider(addressProvider).getAddress("USDC")).transfer(lender, lenderProfit + initialCredit);
-            IERC20(IAddressProvider(addressProvider).getAddress("USDC")).transfer(operator, operatorProfit);
+            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(lender, lenderProfit + initialCredit);
+            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(operator, operatorProfit);
             lenderPosition.positionData[4] = abi.encode(lenderProfit + initialCredit);
             operatorPosition.positionData[XXX] = abi.encode(operatorProfit);
             lenderPosition.pnl = lenderProfit;
             operatorPosition.pnl = operatorProfit;
         } else {
-            IERC20(IAddressProvider(addressProvider).getAddress("USDC")).transfer(creditor, currentValue);
-            IERC20(IAddressProvider(addressProvider).getAddress("USDC")).transfer(operator, 0);
+            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(creditor, currentValue);
+            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(operator, 0);
             lenderPosition.positionData[4] = abi.encode(currentValue);
             operatorPosition.positionData[XXX] = abi.encode(0);
             lenderPosition.pnl = initialCredit - currentValue;

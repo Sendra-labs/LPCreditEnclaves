@@ -38,13 +38,16 @@ contract EnclavesStorage {
             }
         }
         if(enclave.operator != address(0)) addEnclaveToUser(enclave.operator, 1, enclaveId);
-        enclaveIdByAddress[enclave.sendraExecutor] = enclaveId;
+        if(enclave.sendraExecutor != address(0)) enclaveIdByAddress[enclave.sendraExecutor] = enclaveId;
         enclaveById[enclaveId] = enclave;
         nextEnclaveId++;
         return enclaveId;
     }
 
-    function acceptOffer(uint256 _batchId, uint256 _enclaveId) public onlyProtocol {
+    function acceptOffer(uint256 _batchId, uint256 _enclaveId, address _operator, address _sendraExecutor) public onlyProtocol {
+        enclaveById[_enclaveId].operator = _operator;
+        enclaveById[_enclaveId].sendraExecutor = _sendraExecutor;
+        enclaveIdByAddress[_sendraExecutor] = _enclaveId;
         removeOffer(_batchId, _enclaveId);
         addEnclaveToUser(enclaveById[_enclaveId].operator, 1, _enclaveId);
     }

@@ -18,6 +18,9 @@ library LPCE {
         uint256 lenderPositionId; // sendra position id of the lender
         uint256 operatorPositionId; // sendra position id of the operator
         uint256 batchId;
+        uint256 maxUsdcPerTx;
+        uint256 minUsdcPerTx;
+        uint256 deadline;
         string description;
     }
 

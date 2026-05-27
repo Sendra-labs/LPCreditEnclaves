@@ -25,12 +25,12 @@ ________________________________________________________________
 pragma solidity 0.8.28;
 
 import { ILiquidityManager } from "../../interfaces/iSendraCore/sendraUniExec/ILiquidityManager.sol";
-import { SwapRouter } from "./SwapRouter.sol";
+import { ISwapRouter } from "../../interfaces/iSendraCore/sendraUniExec/ISwapRouter.sol";
 import { UniswapLib } from "../../../lib/uniswap/Uniswap.lib.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IUniswapV3PositionNFT } from "../../interfaces/iSendraCore/sendraUniExec/IUniswapV3PositionNFT.sol";
-import { AddressProvider } from "../../../core/config/AddressProvider.sol";
+import { ISendraAddressProvider } from "../../interfaces/iSendraCore/ISendraAddressProvider.sol";
 import { PositionInitializer } from "../../bundles/executors/PositionInitializer.sol";
 import { SendraStorage } from "../../SendraStorage.sol";
 import { SendraLib } from "../../libs/Sendra.lib.sol";
@@ -38,16 +38,16 @@ import { SendraLib } from "../../libs/Sendra.lib.sol";
 contract LiquidityOrchestratorEvo {
     using SafeERC20 for IERC20;
 
-    AddressProvider public immutable addressProvider;
+    ISendraAddressProvider public immutable addressProvider;
     LiquidityManager public immutable liquidityManager;
     SwapRouter public immutable swapRouter;
     IUniswapV3PositionNFT public immutable positionManager;
     SendraStorage public immutable sendraStorage;
 
     constructor(address _addressProvider) {
-        addressProvider = AddressProvider(_addressProvider);
-        liquidityManager = LiquidityManager(addressProvider.getAddress("LiquidityManager"));
-        swapRouter = SwapRouter(addressProvider.getAddress("SwapRouter"));
+        addressProvider = ISendraAddressProvider(_addressProvider);
+        liquidityManager = ILiquidityManager(addressProvider.getAddress("LiquidityManager"));
+        swapRouter = ISwapRouter(addressProvider.getAddress("SwapRouter"));
         positionManager = IUniswapV3PositionNFT(addressProvider.getAddress("UniswapNFTPositionManager"));
         sendraStorage = SendraStorage(addressProvider.getAddress("SendraStorage"));
     }
