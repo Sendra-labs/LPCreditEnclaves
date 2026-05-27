@@ -179,14 +179,14 @@ contract LiquidityLogic {
             IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(lender, lenderProfit + initialCredit);
             IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(operator, operatorProfit);
             lenderPosition.positionData[4] = abi.encode(lenderProfit + initialCredit);
-            operatorPosition.positionData[XXX] = abi.encode(operatorProfit);
+            operatorPosition.positionData[6] = abi.encode(operatorProfit);
             lenderPosition.pnl = lenderProfit;
             operatorPosition.pnl = operatorProfit;
         } else {
-            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(creditor, currentValue);
+            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(lender, currentValue);
             IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(operator, 0);
             lenderPosition.positionData[4] = abi.encode(currentValue);
-            operatorPosition.positionData[XXX] = abi.encode(0);
+            operatorPosition.positionData[6] = abi.encode(0);
             lenderPosition.pnl = initialCredit - currentValue;
             operatorPosition.pnl = 0;
         }
@@ -194,14 +194,22 @@ contract LiquidityLogic {
         lenderPosition.isActive = false;
         operatorPosition.isActive = false;
 
+        lenderPosition.positionData[5] = abi.encode(block.timestamp);
+        operatorPosition.positionData[5] = abi.encode(block.timestamp);
+        operatorPosition.positionData[4] = abi.encode(currentValue);
+        
+        address managerAddress = ISendraAddressProvider(addressProvider).getAddress("AccountingManager");
+
         AccountingManager(managerAddress).updateFullPositionForUser(lender, lenderPosition.id, lenderPosition);
         AccountingManager(managerAddress).updateFullPositionForUser(operator, operatorPosition.id, operatorPosition);
 
         AccountingManager(managerAddress).decreaseGlobalPositionActivePositions(lender);
         AccountingManager(managerAddress).decreaseGlobalPositionActivePositions(operator);
 
-        enclaveStorage.removeEnclaveFromUser(lender, 0, enclave.enclaveId);
-        enclaveStorage.removeEnclaveFromUser(operator, 1, enclave.enclaveId);
+        uint256 enclaveId = enclaveStorage.getEnclaveId(address(this));
+
+        enclaveStorage.removeEnclaveFromUser(lender, 0, enclaveId);
+        enclaveStorage.removeEnclaveFromUser(operator, 1, enclaveId);
 
         emit CreditWithdrawn(lender, lenderProfit + initialCredit, operator, operatorProfit);
 
