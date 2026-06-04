@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {ISendraAddressProvider} from "../../../interfaces/isendra/ISendraAddressProvider.sol";
+import {ISendraAddressProvider} from "../../../interfaces/iSendraCore/ISendraAddressProvider.sol";
 import { ISendraRoles } from "../../../interfaces/iSendraCore/ISendraRoles.sol";
 
 /*

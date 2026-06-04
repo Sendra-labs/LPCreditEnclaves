@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import { LPCE } from "../../library/LPCE.lib.sol";
+import { LPCE } from "../../libs/LPCE.lib.sol";
 import { RPFPDeployer } from "srpe/src/core/RPFPDeployer.sol";
 import { ISendraAddressProvider } from "../../interfaces/iSendraCore/ISendraAddressProvider.sol";
 import { SRPELib } from "srpe/src/libs/SRPE/SRPE.lib.sol";
 import { LiquidityLogic } from "../execution/LiquidityLogic.sol";
 import { EnclavesStorage } from "../storage/EnclavesStorage.sol";
 import { AccessControlInter } from "../storage/security/AccessControlInter.sol";
+import { UniversalExecutor } from "srpe/src/core/execution/UniversalExecutor.sol";
 
 /*
 Deployment instructions:
@@ -42,18 +43,16 @@ contract LiquidityCreditEnclaveFactory {
             });
         
         if(enclave.operator != address(0)) {
-            SRPELib.Rules memory functionSelectorRules;
-            bytes4[] memory functionSelectors;
+            SRPELib.Rules[] memory functionSelectorRules = new SRPELib.Rules[](8);
+            bytes4[] memory functionSelectors = new bytes4[](8);
 
             (functionSelectorRules, functionSelectors) = createRules(
                 params.creditInUsd, 
                 params.minUsdcPerTx, 
                 params.maxUsdcPerTx, 
                 params.deadline, 
-                params.operatorFee, 
                 params.allowedOperator, 
-                msg.sender,
-                params.allowedTokens
+                msg.sender
             );
 
             SRPELib.NewRPFPInputs memory deployParams;
@@ -62,15 +61,15 @@ contract LiquidityCreditEnclaveFactory {
             deployParams.functionSelectorRules = functionSelectorRules;
             deployParams.functionSelectors = functionSelectors;
 
-            (address sendraExecutor, uint256 rpfpId) = RPFPDeployer(addressProvider.getAddress("RPFPDeployer")).deployRPFP(deployParams); // MUST RETURN ADDRESS OF THE EXECUTOR and rpfpId
+            (address sendraExecutor, uint256 rpfpId) = RPFPDeployer(ISendraAddressProvider(addressProvider).getAddress("RPFPDeployer")).deployRPFP(deployParams); // MUST RETURN ADDRESS OF THE EXECUTOR and rpfpId
 
             enclave.sendraExecutor = sendraExecutor;
             
-            uint256 enclaveId = EnclavesStorage(addressProvider.getAddress("EnclavesStorage")).createEnclave(enclave);
+            uint256 enclaveId = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage")).createEnclave(enclave);
 
-            AccessControlInter(addressProvider.getAddress("AccessControlInter")).setIsSendraEnclave(sendraExecutor, true);
+            AccessControlInter(ISendraAddressProvider(addressProvider).getAddress("AccessControlInter")).setIsSendraEnclave(sendraExecutor, true);
 
-            sendraExecutor.execute(
+            UniversalExecutor(sendraExecutor).execute(
                 SRPELib.ExecutionParams({
                 targetFunction: 6, // initializeOperatorPosition Not used ¿?¿?
                 rpfpId: rpfpId,
@@ -82,7 +81,7 @@ contract LiquidityCreditEnclaveFactory {
             return (enclaveId, sendraExecutor);
         } else {
 
-            uint256 enclaveId = EnclavesStorage(addressProvider.getAddress("EnclavesStorage")).createEnclave(enclave);
+            uint256 enclaveId = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage")).createEnclave(enclave);
 
             return (enclaveId, address(0));
         }
@@ -91,22 +90,20 @@ contract LiquidityCreditEnclaveFactory {
 
     function acceptOffer(uint256 _batchId, uint256 _enclaveId) public {
 
-        EnclavesStorage enclaveStorage = EnclavesStorage(addressProvider.getAddress("EnclavesStorage"));
+        EnclavesStorage enclaveStorage = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage"));
 
         LPCE.Enclave memory enclave = enclaveStorage.getEnclave(_enclaveId);
         
-        SRPELib.Rules memory functionSelectorRules;
-        bytes4[] memory functionSelectors;
+        SRPELib.Rules[] memory functionSelectorRules = new SRPELib.Rules[](8);
+        bytes4[] memory functionSelectors = new bytes4[](8);
 
         (functionSelectorRules, functionSelectors) = createRules(
             enclave.creditInUsd, 
             enclave.minUsdcPerTx, 
             enclave.maxUsdcPerTx, 
             enclave.deadline, 
-            enclave.operatorFee, 
             msg.sender, 
-            enclave.lender,
-            new address[](0)
+            enclave.lender
         );
 
         SRPELib.NewRPFPInputs memory deployParams;
@@ -115,14 +112,14 @@ contract LiquidityCreditEnclaveFactory {
         deployParams.functionSelectorRules = functionSelectorRules;
         deployParams.functionSelectors = functionSelectors;
 
-        /*address sendraExecutor, uint256 rpfpId = */ RPFPDeployer(addressProvider.getAddress("RPFPDeployer")).deployRPFP(deployParams); // MUST RETURN ADDRESS OF THE EXECUTOR and rpfpId
+        (address sendraExecutor, uint256 rpfpId) = RPFPDeployer(ISendraAddressProvider(addressProvider).getAddress("RPFPDeployer")).deployRPFP(deployParams);
 
-        AccessControlInter(addressProvider.getAddress("AccessControlInter")).setIsSendraEnclave(sendraExecutor, true);
+        AccessControlInter(ISendraAddressProvider(addressProvider).getAddress("AccessControlInter")).setIsSendraEnclave(sendraExecutor, true);
 
-        sendraExecutor.execute(
+        UniversalExecutor(sendraExecutor).execute(
             SRPELib.ExecutionParams({
             targetFunction: 6, // initializeOperatorPosition Not used ¿?¿?
-            rpfpId: /*rpfpId*/,
+            rpfpId: rpfpId,
             actionData: abi.encodeWithSelector(LiquidityLogic.initializeOperatorPosition.selector)
         }));
 
@@ -136,10 +133,8 @@ contract LiquidityCreditEnclaveFactory {
             uint256 minUsdcPerTx, 
             uint256 maxUsdcPerTx, 
             uint256 deadline, 
-            uint256 operatorFee, 
             address allowedOperator,
-            address allowedLender,
-            address[] memory allowedTokens
+            address allowedLender
         ) internal view returns (SRPELib.Rules[] memory functionSelectorRules, bytes4[] memory functionSelectors) {
         
         if(minUsdcPerTx == 0) revert MinUsdcPerTxCannotBeZero();
@@ -148,9 +143,9 @@ contract LiquidityCreditEnclaveFactory {
         if(deadline <= block.timestamp) revert DeadlineCannotBeInThePast();
 
         
-        functionSelectorRules = new SRPELib.Rules[](7);
+        functionSelectorRules = new SRPELib.Rules[](8);
 
-        functionSelectors = new bytes4[](7);
+        functionSelectors = new bytes4[](8);
 
         // Provide Liquidity
         functionSelectors[0] = LiquidityLogic.provideLiquidity.selector;
@@ -275,11 +270,25 @@ contract LiquidityCreditEnclaveFactory {
                 extraData: ""
             });
 
+        // revoke enclave (operator only, before deposit)
+        functionSelectors[7] = LiquidityLogic.revokeEnclave.selector;
+
+        functionSelectorRules[7] = SRPELib.Rules({
+            ruleCount: 1,
+            rules: new SRPELib.Rule[](1)
+        });
+
+            functionSelectorRules[7].rules[0] = SRPELib.Rule({
+                ruleType: 5,
+                ruleData: abi.encode(functionSelectors[7], allowedOperator),
+                extraData: ""
+            });
+
         return (functionSelectorRules, functionSelectors);
     }
 
     event EnclaveCreated(uint256 indexed enclaveId, address indexed sendraExecutor);
-    event OfferAccepted(uint256 indexed batchId, uint256 indexed enclaveId, address indexed operator, address indexed sendraExecutor);
+    event OfferAccepted(uint256 indexed batchId, uint256 indexed enclaveId, address indexed operator, address sendraExecutor);
 
     error MinUsdcPerTxCannotBeZero();
     error MaxUsdcPerTxCannotBeLessThanMinUsdcPerTx();

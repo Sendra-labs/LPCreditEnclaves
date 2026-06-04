@@ -26,30 +26,29 @@ pragma solidity 0.8.28;
 
 import { ILiquidityManager } from "../../interfaces/iSendraCore/sendraUniExec/ILiquidityManager.sol";
 import { ISwapRouter } from "../../interfaces/iSendraCore/sendraUniExec/ISwapRouter.sol";
-import { UniswapLib } from "../../../lib/uniswap/Uniswap.lib.sol";
+import { UniswapLib } from "../../libs/uni.lib.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IUniswapV3PositionNFT } from "../../interfaces/iSendraCore/sendraUniExec/IUniswapV3PositionNFT.sol";
 import { ISendraAddressProvider } from "../../interfaces/iSendraCore/ISendraAddressProvider.sol";
-import { PositionInitializer } from "../../bundles/executors/PositionInitializer.sol";
-import { SendraStorage } from "../../SendraStorage.sol";
+import { ISendraStorage } from "../../interfaces/iSendraCore/ISendraStorage.sol";
 import { SendraLib } from "../../libs/Sendra.lib.sol";
 
 contract LiquidityOrchestratorEvo {
     using SafeERC20 for IERC20;
 
     ISendraAddressProvider public immutable addressProvider;
-    LiquidityManager public immutable liquidityManager;
-    SwapRouter public immutable swapRouter;
+    ILiquidityManager public immutable liquidityManager;
+    ISwapRouter public immutable swapRouter;
     IUniswapV3PositionNFT public immutable positionManager;
-    SendraStorage public immutable sendraStorage;
+    ISendraStorage public immutable sendraStorage;
 
     constructor(address _addressProvider) {
         addressProvider = ISendraAddressProvider(_addressProvider);
         liquidityManager = ILiquidityManager(addressProvider.getAddress("LiquidityManager"));
         swapRouter = ISwapRouter(addressProvider.getAddress("SwapRouter"));
         positionManager = IUniswapV3PositionNFT(addressProvider.getAddress("UniswapNFTPositionManager"));
-        sendraStorage = SendraStorage(addressProvider.getAddress("SendraStorage"));
+        sendraStorage = ISendraStorage(addressProvider.getAddress("SendraStorage"));
     }
 
     function provideLiquidity(UniswapLib.ExecuteProvideLiquidityInput calldata _input)
@@ -236,6 +235,7 @@ contract LiquidityOrchestratorEvo {
         });
     }
 
+    /*
     function collectFeesOnly(UniswapLib.ExecuteCollectFeesOnly calldata _input) public returns (uint256){
         require(_input.swapInput0.tokenOut == _input.swapInput1.tokenOut, "Tokens out are not the same");
         uint256 prevBalance = IERC20(_input.swapInput0.tokenOut).balanceOf(address(this));
@@ -277,6 +277,7 @@ contract LiquidityOrchestratorEvo {
         positionManager.transferFrom(address(this), msg.sender, _input.collectParams.uniId);
         return amount;
     }
+    */
 
     function withdrawLiquidityAndCollectFees(UniswapLib.ExecuteWithdrawLiquidityAndCollectFees calldata _input)
         public
@@ -378,7 +379,8 @@ contract LiquidityOrchestratorEvo {
         uint256 feesCollectedUsdc = collectFees(executeCollectFeesOnly);
 
         positionManager.approve(address(liquidityManager), _input.withdrawLiquidityInput.uniId);
-        (position, uint160 sqrtCurrentPrice) = liquidityManager.withdrawLiquidityV3(_input.withdrawLiquidityInput);
+        uint160 sqrtCurrentPrice;
+        (position, sqrtCurrentPrice) = liquidityManager.withdrawLiquidityV3(_input.withdrawLiquidityInput);
 
         UniswapLib.CollectParams memory collectParams = UniswapLib.CollectParams(
             _input.withdrawLiquidityInput.uniId,

@@ -66,8 +66,8 @@ contract LiquidityLogic {
             uint24 fee,
             address token0, 
             address token1,
-            UniswapLib.SwapInput swapInput0; 
-            UniswapLib.SwapInput swapInput1;
+            UniswapLib.SwapInput calldata swapInput0,
+            UniswapLib.SwapInput calldata swapInput1
         ) public onlyNotPaused {
 
             address liquidityOrchestrator = ISendraAddressProvider(addressProvider).getAddress("LiquidityOrchestratorEvo");
@@ -77,22 +77,22 @@ contract LiquidityLogic {
             ILiquidityOrchestratorEvo executor = ILiquidityOrchestratorEvo(liquidityOrchestrator);
 
             UniswapLib.ExecuteProvideLiquidityInput memory params = UniswapLib.ExecuteProvideLiquidityInput({
-                swapInput0,
-                swapInput1,
-                UniswapLib.ProvideLiquidityInput({
-                    protocol,
-                    token0,
-                    token1,
-                    address(this),
-                    msg.sender,
-                    amount0, 
-                    amount1,
-                    tickLower,
-                    tickUpper,
-                    fee
+                swapInput0: swapInput0,
+                swapInput1: swapInput1,
+                provideLiquidityInput: UniswapLib.ProvideLiquidityInput({
+                    protocol: protocol,
+                    token0: token0,
+                    token1: token1,
+                    recipient: address(this),
+                    user: msg.sender,
+                    amount0: amount0,
+                    amount1: amount1,
+                    tickLower: tickLower,
+                    tickUpper: tickUpper,
+                    fee: fee
                 }),
-                false 
-            }) 
+                isSendraRecipient: false
+            });
 
             (bytes[] memory positionData, uint8[] memory gFieldIdsProvider, int256[] memory gDeltasProvider) =
                 executor.provideLiquidity(params);
@@ -103,10 +103,10 @@ contract LiquidityLogic {
 
     }
 
-    function closePosition(uint256 positionId, UniswapLib.SwapInput swapInput0, UniswapLib.SwapInput swapInput1) public {
+    function closePosition(uint256 positionId, UniswapLib.SwapInput calldata swapInput0, UniswapLib.SwapInput calldata swapInput1) public {
         ISendraStorage sendraStorage = ISendraStorage(ISendraAddressProvider(addressProvider).getAddress("SendraStorage"));
         SendraLib.Position memory position = sendraStorage.getUserPositionById(address(this), positionId);
-        uint256 uniId = abi.decode(position.positionData[9], (uint256));
+        uint128 uniId = abi.decode(position.positionData[9], (uint128));
 
         LPCE.Enclave memory enclave = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage"))
             .getEnclaveByAddress(address(this));
@@ -148,6 +148,34 @@ contract LiquidityLogic {
         manager.manageFullPositionForEnclave(positionId, closedPosition);
         manager.applyGlobalPulseDeltas(operator, gFieldIdsProvider, gDeltasProvider);
         manager.decreaseGlobalPositionActivePositions(address(this));
+    }
+
+    function revokeEnclave() public onlyNotDeposited {
+        EnclavesStorage enclaveStorage = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage"));
+        LPCE.Enclave memory enclave = enclaveStorage.getEnclaveByAddress(address(this));
+
+        ISendraStorage sendraStorage = ISendraStorage(ISendraAddressProvider(addressProvider).getAddress("SendraStorage"));
+        if(sendraStorage.getUser(address(this)).activePositions > 0) revert OpenEnclavePositionsNotClosed();
+
+        address managerAddress = ISendraAddressProvider(addressProvider).getAddress("AccountingManager");
+        AccountingManager manager = AccountingManager(managerAddress);
+
+        if(enclave.operatorPositionId > 0) {
+            SendraLib.Position memory operatorPosition = sendraStorage.getUserPositionById(
+                enclave.operator,
+                enclave.operatorPositionId
+            );
+            if(operatorPosition.isActive) {
+                operatorPosition.isActive = false;
+                operatorPosition.positionData[5] = abi.encode(block.timestamp);
+                manager.updateFullPositionForUser(enclave.operator, operatorPosition.id, operatorPosition);
+                manager.decreaseGlobalPositionActivePositions(enclave.operator);
+            }
+        }
+
+        enclaveStorage.revokeEnclaveListing();
+
+        emit EnclaveRevoked(enclave.lender, enclave.operator);
     }
 
     function depositCredit(uint256 creditInUsd) public onlyNotDeposited {
@@ -295,7 +323,7 @@ contract LiquidityLogic {
             int256 drawdown = (newPnl < highWaterMark) ? highWaterMark - newPnl : int256(0);
             gDeltas[5] = maxDrawdown < drawdown ? drawdown - maxDrawdown : int256(0);
             gFieldIds[7] = 12;
-            gDeltas[7] = lenderPnl < 0 ? 1 : 0;
+            gDeltas[7] = lenderPnl < 0 ? int256(1) : int256(0);
         }
 
         gFieldIds[8] = 13;
@@ -329,22 +357,24 @@ contract LiquidityLogic {
     }
 
     function pauseExecution() public {
-        ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage").pauseExecution();
+        EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage")).pauseExecution();
         emit ExecutionPaused();
     }
 
     function unpauseExecution() public {
-        ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage").unpauseExecution();
+        EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage")).unpauseExecution();
         emit ExecutionUnpaused();
     }
 
     event CreditWithdrawn(address indexed lender, uint256 amount, address indexed operator, uint256 operatorProfit);
     event CreditDeposited(address indexed lender, uint256 amount);
+    event EnclaveRevoked(address indexed lender, address indexed operator);
     event ExecutionPaused();
     event ExecutionUnpaused();
 
     error Paused();
     error Deposited();
     error PositionsNotClosed();
+    error OpenEnclavePositionsNotClosed();
     error OperatorPositionAlreadyInitialized();
 }

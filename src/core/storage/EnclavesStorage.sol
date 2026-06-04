@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import { LPCE } from "../../library/LPCE.lib.sol";
+import { LPCE } from "../../libs/LPCE.lib.sol";
 import { ISendraAddressProvider } from "../../interfaces/iSendraCore/ISendraAddressProvider.sol";
 import { ISendraRoles } from "../../interfaces/iSendraCore/ISendraRoles.sol";
 
@@ -77,6 +77,21 @@ contract EnclavesStorage {
     }
 
     function removeEnclaveFromUser(address _user, uint256 _type, uint256 _enclaveId) public onlyProtocol {
+        _removeEnclaveFromUser(_user, _type, _enclaveId);
+    }
+
+    function revokeEnclaveListing() public {
+        uint256 enclaveId = enclaveIdByAddress[msg.sender];
+        if(enclaveById[enclaveId].isDeposited) revert CannotRevokeDepositedEnclave();
+
+        address lender = enclaveById[enclaveId].lender;
+        address operator = enclaveById[enclaveId].operator;
+
+        if(lender != address(0)) _removeEnclaveFromUser(lender, 0, enclaveId);
+        if(operator != address(0)) _removeEnclaveFromUser(operator, 1, enclaveId);
+    }
+
+    function _removeEnclaveFromUser(address _user, uint256 _type, uint256 _enclaveId) internal {
         uint256[] memory enclavesArray = enclaves[_user][_type];
         for(uint256 i = 0; i < enclavesArray.length; i++) {
             if(enclavesArray[i] == _enclaveId) {
@@ -146,5 +161,6 @@ contract EnclavesStorage {
     }
 
     error NotProtocolContract();
-
+    error CannotRevokeDepositedEnclave();
+    error UserAlreadyHasMaxEnclaves();
 }
