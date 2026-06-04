@@ -173,7 +173,7 @@ contract LiquidityLogic {
             }
         }
 
-        enclaveStorage.revokeEnclaveListing();
+        manager.revokeEnclaveListing();
 
         emit EnclaveRevoked(enclave.lender, enclave.operator);
     }
@@ -333,7 +333,35 @@ contract LiquidityLogic {
         gDeltas[9] = int256(block.timestamp - lastActivityTimestamp);
 
         address managerAddress = ISendraAddressProvider(addressProvider).getAddress("AccountingManager");
-        AccountingManager(managerAddress).applyGlobalPulseDeltas(lender, gFieldIds, gDeltas);
+        AccountingManager manager = AccountingManager(managerAddress);
+        manager.applyGlobalPulseDeltas(lender, gFieldIds, gDeltas);
+
+        int256 operatorPnl = operatorPosition.pnl;
+        int256 operatorHighWaterMark = sendraStorage.getUniqueGlobalAccumulator(7, operator);
+        int256 operatorCurrentPnl = sendraStorage.getUniqueGlobalAccumulator(4, operator);
+        int256 operatorNewPnl = operatorCurrentPnl + operatorPnl;
+        uint256 operatorLastActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(15, operator));
+
+        uint8 operatorPulseLen = operatorPnl > 0 ? 4 : 2;
+        uint8[] memory operatorGFieldIds = new uint8[](operatorPulseLen);
+        int256[] memory operatorGDeltas = new int256[](operatorPulseLen);
+
+        operatorGFieldIds[0] = 4;
+        operatorGDeltas[0] = operatorPnl;
+
+        if(operatorPnl > 0) {
+            operatorGFieldIds[1] = 5;
+            operatorGDeltas[1] = operatorPnl;
+            operatorGFieldIds[2] = 7;
+            operatorGDeltas[2] = operatorHighWaterMark < operatorNewPnl ? operatorNewPnl - operatorHighWaterMark : int256(0);
+            operatorGFieldIds[3] = 15;
+            operatorGDeltas[3] = int256(block.timestamp - operatorLastActivityTimestamp);
+        } else {
+            operatorGFieldIds[1] = 15;
+            operatorGDeltas[1] = int256(block.timestamp - operatorLastActivityTimestamp);
+        }
+
+        manager.applyGlobalPulseDeltas(operator, operatorGFieldIds, operatorGDeltas);
 
         lenderPosition.isActive = false;
         operatorPosition.isActive = false;
@@ -342,16 +370,16 @@ contract LiquidityLogic {
         operatorPosition.positionData[5] = abi.encode(block.timestamp);
         operatorPosition.positionData[4] = abi.encode(currentValue);
 
-        AccountingManager(managerAddress).updateFullPositionForUser(lender, lenderPosition.id, lenderPosition);
-        AccountingManager(managerAddress).updateFullPositionForUser(operator, operatorPosition.id, operatorPosition);
+        manager.updateFullPositionForUser(lender, lenderPosition.id, lenderPosition);
+        manager.updateFullPositionForUser(operator, operatorPosition.id, operatorPosition);
 
-        AccountingManager(managerAddress).decreaseGlobalPositionActivePositions(lender);
-        AccountingManager(managerAddress).decreaseGlobalPositionActivePositions(operator);
+        manager.decreaseGlobalPositionActivePositions(lender);
+        manager.decreaseGlobalPositionActivePositions(operator);
 
         uint256 enclaveId = enclaveStorage.getEnclaveId(address(this));
 
-        enclaveStorage.removeEnclaveFromUser(lender, 0, enclaveId);
-        enclaveStorage.removeEnclaveFromUser(operator, 1, enclaveId);
+        manager.removeEnclaveFromUser(lender, 0, enclaveId);
+        manager.removeEnclaveFromUser(operator, 1, enclaveId);
 
         emit CreditWithdrawn(lender, capitalOutToLender, operator, operatorProfit);
     }

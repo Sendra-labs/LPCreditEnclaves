@@ -5,6 +5,7 @@ import {AccessControlInter} from "../storage/security/AccessControlInter.sol";
 import {ISendraAddressProvider} from "../../interfaces/iSendraCore/ISendraAddressProvider.sol";
 import {ISendraStorage} from "../../interfaces/iSendraCore/ISendraStorage.sol";
 import {SendraLib} from "../../libs/Sendra.lib.sol";
+import {EnclavesStorage} from "../storage/EnclavesStorage.sol";
 
 // This contract is protocol contract and is allowed to write on the Sendra storage. 
 /* 
@@ -84,5 +85,18 @@ contract AccountingManager {
     function applyGlobalPulseDeltas(address _user, uint8[] memory _gFieldIds, int256[] memory _gDeltas) public onlyEnclave {
         ISendraStorage(ISendraAddressProvider(addressProvider).getAddress("SendraStorage")).applyGlobalPulseDeltas(_user, _gFieldIds, _gDeltas);
     }
-    
+
+    function removeEnclaveFromUser(address _user, uint256 _enclaveRoleType, uint256 _enclaveId) public onlyEnclave {
+        EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage")).removeEnclaveFromUser(
+            _user,
+            _enclaveRoleType,
+            _enclaveId
+        );
+    }
+
+    function revokeEnclaveListing() public onlyEnclave {
+        EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage")).revokeEnclaveListingForExecutor(
+            msg.sender
+        );
+    }
 }

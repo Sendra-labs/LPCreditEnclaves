@@ -80,8 +80,8 @@ contract EnclavesStorage {
         _removeEnclaveFromUser(_user, _type, _enclaveId);
     }
 
-    function revokeEnclaveListing() public {
-        uint256 enclaveId = enclaveIdByAddress[msg.sender];
+    function revokeEnclaveListingForExecutor(address executor) public onlyProtocol {
+        uint256 enclaveId = enclaveIdByAddress[executor];
         if(enclaveById[enclaveId].isDeposited) revert CannotRevokeDepositedEnclave();
 
         address lender = enclaveById[enclaveId].lender;
