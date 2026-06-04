@@ -52,18 +52,19 @@ contract LiquidityOrchestratorEvo {
         sendraStorage = SendraStorage(addressProvider.getAddress("SendraStorage"));
     }
 
-    function provideLiquidity(UniswapLib.ExecuteProvideLiquidityInput calldata _input) public returns (bytes[] memory) {
+    function provideLiquidity(UniswapLib.ExecuteProvideLiquidityInput calldata _input)
+        public
+        returns (bytes[] memory positionData, uint8[] memory gFieldIdsProvider, int256[] memory gDeltasProvider)
+    {
         UniswapLib.SwapInput memory swapInput0 = _input.swapInput0;
         UniswapLib.SwapInput memory swapInput1 = _input.swapInput1;
         UniswapLib.ProvideLiquidityInput memory provideLiquidityInput = _input.provideLiquidityInput;
+        address operator = provideLiquidityInput.user;
 
-        uint8[] memory gFieldIds = new uint8[](5);
-        int256[] memory gDeltas = new int256[](5);
+        gFieldIdsProvider = new uint8[](3);
+        gDeltasProvider = new int256[](3);
 
-        uint8[] memory sFieldIds = new uint8[](2);
-        int256[] memory sDeltas = new int256[](2);
-
-        bytes[] memory positionData = new bytes[](18);
+        positionData = new bytes[](18);
 
         if(provideLiquidityInput.protocol == UniswapLib.Protocol.UniswapV3){
             
@@ -91,7 +92,6 @@ contract LiquidityOrchestratorEvo {
             if(isSwapNeeded1) swapRouter.executeSwap(swapInput1);
 
             provideLiquidityInput.recipient = msg.sender;
-            provideLiquidityInput.user = msg.sender;
 
             (
                 uint256 tokenId, 
@@ -177,43 +177,28 @@ contract LiquidityOrchestratorEvo {
             // [16] = final date
             // [17] = chainId
 
-            gFieldIds[0] = 0;
-            gDeltas[0] = int256(initialPositionUsdcValue);
+            uint256 firstActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(14, operator));
+            uint256 lastActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(15, operator));
 
-            gFieldIds[1] = 2;
-            uint256 peakExposure = uint256(sendraStorage.getUniqueGlobalAccumulator(2, _input.provideLiquidityInput.user));
-            uint256 currentExposure = uint256(sendraStorage.getUniqueGlobalAccumulator(3, _input.provideLiquidityInput.user));
-            uint256 newExposure = currentExposure + initialPositionUsdcValue;
-            uint256 lastActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(15, _input.provideLiquidityInput.user));
-            gDeltas[1] = newExposure > peakExposure ? int256(newExposure - peakExposure) : int256(0);
+            gFieldIdsProvider[0] = 9;
+            gDeltasProvider[0] = 1;
 
-            gFieldIds[2] = 3;
-            gDeltas[2] = int256(initialPositionUsdcValue);
+            gFieldIdsProvider[1] = 14;
+            gDeltasProvider[1] = firstActivityTimestamp == 0 ? int256(block.timestamp) : int256(0);
 
-            gFieldIds[3] = 9;
-            gDeltas[3] = 1;
-
-            gFieldIds[4] = 15;
-            gDeltas[4] = int256(block.timestamp - lastActivityTimestamp);
-
-            sFieldIds[0] = 1;
-            sDeltas[0] = int256(initialPositionUsdcValue);
-
-            sFieldIds[1] = 5;
-            sDeltas[1] = 1;
+            gFieldIdsProvider[2] = 15;
+            gDeltasProvider[2] = int256(block.timestamp - lastActivityTimestamp);
 
         } else if(provideLiquidityInput.protocol == UniswapLib.Protocol.UniswapV4){
             //TODO: Implement UniswapV4
         }
 
-        updateAccumulators(gFieldIds, gDeltas, 2, sFieldIds, sDeltas);
-
-        return positionData;
+        return (positionData, gFieldIdsProvider, gDeltasProvider);
     }
 
-    function updateAccumulators(uint8[] memory _gFieldIds, int256[] memory _gDeltas, uint64 _specificKey, uint8[] memory _sFieldIds, int256[] memory _sDeltas) internal {
-        sendraStorage.applyGlobalPulseDeltas(msg.sender, _gFieldIds, _gDeltas);
-        sendraStorage.applySpecificPulseDeltas(msg.sender, _specificKey, _sFieldIds, _sDeltas);
+    function updateAccumulators(address _user, uint8[] memory _gFieldIds, int256[] memory _gDeltas, uint64 _specificKey, uint8[] memory _sFieldIds, int256[] memory _sDeltas) internal {
+        sendraStorage.applyGlobalPulseDeltas(_user, _gFieldIds, _gDeltas);
+        sendraStorage.applySpecificPulseDeltas(_user, _specificKey, _sFieldIds, _sDeltas);
     }
 
     function invertSwapInput(UniswapLib.SwapInput memory _input, uint256 _amount)
@@ -293,8 +278,85 @@ contract LiquidityOrchestratorEvo {
         return amount;
     }
 
-    function withdrawLiquidityAndCollectFees(UniswapLib.ExecuteWithdrawLiquidityAndCollectFees calldata _input) public returns (uint256, SendraLib.Position memory){
-        
+    function withdrawLiquidityAndCollectFees(UniswapLib.ExecuteWithdrawLiquidityAndCollectFees calldata _input)
+        public
+        returns (
+            uint256 amountUsdcReceived,
+            SendraLib.Position memory position,
+            uint8[] memory gFieldIdsProvider,
+            int256[] memory gDeltasProvider
+        )
+    {
+        (amountUsdcReceived, position) = _withdrawLiquidityCore(_input);
+
+        address operator = _input.operator;
+        int256 consecutiveLosses = sendraStorage.getUniqueGlobalAccumulator(17, operator);
+        int256 maxConsecutiveLosses = sendraStorage.getUniqueGlobalAccumulator(18, operator);
+        uint256 lastActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(15, operator));
+
+        uint8 pulseLen = position.pnl != 0 ? 6 : 5;
+        gFieldIdsProvider = new uint8[](pulseLen);
+        gDeltasProvider = new int256[](pulseLen);
+
+        gFieldIdsProvider[0] = 10;
+        gDeltasProvider[0] = 1;
+
+        uint8 idx = 1;
+        if(position.pnl > 0) {
+            gFieldIdsProvider[idx] = 11;
+            gDeltasProvider[idx] = 1;
+            idx++;
+        } else if(position.pnl < 0) {
+            gFieldIdsProvider[idx] = 12;
+            gDeltasProvider[idx] = 1;
+            idx++;
+        }
+
+        gFieldIdsProvider[idx] = 13;
+        gDeltasProvider[idx] = int256(block.timestamp - abi.decode(position.positionData[2], (uint256)));
+        idx++;
+
+        gFieldIdsProvider[idx] = 15;
+        gDeltasProvider[idx] = int256(block.timestamp - lastActivityTimestamp);
+        idx++;
+
+        gFieldIdsProvider[idx] = 17;
+        gFieldIdsProvider[idx + 1] = 18;
+        if(position.pnl < 0) {
+            int256 newStreak = consecutiveLosses + 1;
+            gDeltasProvider[idx] = 1;
+            gDeltasProvider[idx + 1] = newStreak > maxConsecutiveLosses ? newStreak - maxConsecutiveLosses : int256(0);
+        } else if(position.pnl > 0) {
+            gDeltasProvider[idx] = consecutiveLosses > 0 ? -consecutiveLosses : int256(0);
+            gDeltasProvider[idx + 1] = 0;
+        }
+
+        return (amountUsdcReceived, position, gFieldIdsProvider, gDeltasProvider);
+    }
+
+    function withdrawLiquidityAndCollectFeesFromLender(UniswapLib.ExecuteWithdrawLiquidityAndCollectFees calldata _input)
+        public
+        returns (
+            uint256 amountUsdcReceived,
+            SendraLib.Position memory position,
+            uint8[] memory gFieldIdsProvider,
+            int256[] memory gDeltasProvider
+        )
+    {
+        (amountUsdcReceived, position) = _withdrawLiquidityCore(_input);
+
+        gFieldIdsProvider = new uint8[](1);
+        gDeltasProvider = new int256[](1);
+        gFieldIdsProvider[0] = 9;
+        gDeltasProvider[0] = -1;
+
+        return (amountUsdcReceived, position, gFieldIdsProvider, gDeltasProvider);
+    }
+
+    function _withdrawLiquidityCore(UniswapLib.ExecuteWithdrawLiquidityAndCollectFees calldata _input)
+        internal
+        returns (uint256 amountUsdcReceived, SendraLib.Position memory position)
+    {
         require(_input.swapInput0.tokenOut == _input.swapInput1.tokenOut, "Tokens out are not the same");
         uint256 prevBalance = IERC20(_input.swapInput0.tokenOut).balanceOf(address(this));
 
@@ -316,8 +378,8 @@ contract LiquidityOrchestratorEvo {
         uint256 feesCollectedUsdc = collectFees(executeCollectFeesOnly);
 
         positionManager.approve(address(liquidityManager), _input.withdrawLiquidityInput.uniId);
-        (SendraLib.Position memory position, uint160 sqrtCurrentPrice) = liquidityManager.withdrawLiquidityV3(_input.withdrawLiquidityInput);
-        
+        (position, uint160 sqrtCurrentPrice) = liquidityManager.withdrawLiquidityV3(_input.withdrawLiquidityInput);
+
         UniswapLib.CollectParams memory collectParams = UniswapLib.CollectParams(
             _input.withdrawLiquidityInput.uniId,
             _input.withdrawLiquidityInput.positionId,
@@ -327,7 +389,7 @@ contract LiquidityOrchestratorEvo {
 
         positionManager.approve(address(liquidityManager), _input.withdrawLiquidityInput.uniId);
         (uint256 amount0, uint256 amount1) = liquidityManager.collectV3(collectParams);
-        
+
         bool isSwapNeeded0 = _input.swapInput0.tokenIn != _input.swapInput0.tokenOut;
         bool isSwapNeeded1 = _input.swapInput1.tokenIn != _input.swapInput1.tokenOut;
 
@@ -349,7 +411,7 @@ contract LiquidityOrchestratorEvo {
         }
 
         uint256 newBalance = IERC20(_input.swapInput0.tokenOut).balanceOf(address(this));
-        uint256 amountUsdcReceived = newBalance - prevBalance;
+        amountUsdcReceived = newBalance - prevBalance;
         IERC20(_input.swapInput0.tokenOut).transfer(msg.sender, amountUsdcReceived);
 
         positionManager.transferFrom(address(this), msg.sender, _input.withdrawLiquidityInput.uniId);
@@ -358,89 +420,9 @@ contract LiquidityOrchestratorEvo {
         position.pnl = int256(amountUsdcReceived) - int256(abi.decode(position.positionData[15], (uint256)));
 
         position.positionData[12] = abi.encode(amountUsdcReceived);
-        position.positionData[13] = abi.encode(sqrtCurrentPrice); // finalPoolPrice
-        position.positionData[14] = abi.encode(feesCollectedUsdc); // feesCollectedUSD
-        position.positionData[16] = abi.encode(block.timestamp); // final date
-
-        uint8[] memory gFieldIds = new uint8[](13);
-        int256[] memory gDeltas = new int256[](13);
-
-        uint8[] memory sFieldIds = new uint8[](3);
-        int256[] memory sDeltas = new int256[](3);
-
-        gFieldIds[0] = 1;
-        gDeltas[0] = int256(amountUsdcReceived);
-        gFieldIds[1] = 3;
-        gDeltas[1] = -int256(abi.decode(position.positionData[15], (uint256)));
-        gFieldIds[2] = 4;
-        gDeltas[2] = int256(position.pnl);
-        int256 highWaterMark = sendraStorage.getUniqueGlobalAccumulator(7, _input.withdrawLiquidityInput.user);
-        int256 currentPnl = sendraStorage.getUniqueGlobalAccumulator(4, _input.withdrawLiquidityInput.user);
-        int256 newPnl = currentPnl + position.pnl;
-        int256 maxDrawdown = sendraStorage.getUniqueGlobalAccumulator(8, _input.withdrawLiquidityInput.user);
-        int256 consecutiveLosses = sendraStorage.getUniqueGlobalAccumulator(17, _input.withdrawLiquidityInput.user);
-        int256 maxConsecutiveLosses = sendraStorage.getUniqueGlobalAccumulator(18, _input.withdrawLiquidityInput.user);
-        uint256 lastActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(15, _input.withdrawLiquidityInput.user));
-        gFieldIds[4] = 7;
-        gFieldIds[5] = 8;
-        gFieldIds[6] = 10;
-        gDeltas[6] = 1;
-        gFieldIds[7] = 11;
-        gFieldIds[8] = 12;
-
-        if(position.pnl > 0) {
-            gFieldIds[3] = 5;
-            gDeltas[3] = int256(position.pnl);
-            gDeltas[4] = highWaterMark < newPnl ? int256(newPnl - highWaterMark) : int256(0);
-            gDeltas[5] = 0;
-            gDeltas[7] = 1;
-            gDeltas[8] = 0;
-        } else {
-            gFieldIds[3] = 6;
-            gDeltas[3] = -int256(position.pnl);
-            gDeltas[4] = int256(0);
-            int256 drawdown = (newPnl < highWaterMark) ? int256(highWaterMark - newPnl) : int256(0);
-            gDeltas[5] = maxDrawdown < drawdown ? drawdown - maxDrawdown : int256(0);
-            gDeltas[7] = 0;
-            gDeltas[8] = 1;
-        }
-
-        gFieldIds[9] = 13;
-        gDeltas[9] = int256(block.timestamp - abi.decode(position.positionData[2], (uint256)));
-
-        gFieldIds[10] = 15;
-        gDeltas[10] = int256(block.timestamp - lastActivityTimestamp);
-
-        gFieldIds[11] = 17;
-        gFieldIds[12] = 18;
-        if(position.pnl < 0) {
-            int256 newStreak = consecutiveLosses + 1;
-            gDeltas[11] = int256(1); // consecutiveLosses += 1
-            gDeltas[12] = newStreak > maxConsecutiveLosses ? int256(newStreak - maxConsecutiveLosses) : int256(0);
-        } else if(position.pnl > 0) {
-            gDeltas[11] = consecutiveLosses > 0 ? -consecutiveLosses : int256(0); // reset to 0 on win
-            gDeltas[12] = int256(0);
-        }
-
-        sFieldIds[0] = 0;
-        sDeltas[0] = int256(position.pnl);
-        sFieldIds[1] = 2;
-        sDeltas[1] = int256(amountUsdcReceived);
-
-        if(position.pnl > 0) {
-            sFieldIds[2] = 3;
-            sDeltas[2] = int256(1);
-        } else if(position.pnl < 0) {
-            sFieldIds[2] = 4;
-            sDeltas[2] = int256(-1);
-        }
-
-        sendraStorage.applyMetricDelta(msg.sender, 2, 0, int256(feesCollectedUsdc)); // feesCollectedUSD (base unit)
-        sendraStorage.applyMetricDelta(msg.sender, 2, 1, int256(block.timestamp - abi.decode(position.positionData[2], (uint256)))); // liquiditySeconds
-
-        updateAccumulators(gFieldIds, gDeltas, 2, sFieldIds, sDeltas);
-
-        return (amountUsdcReceived, position);
+        position.positionData[13] = abi.encode(sqrtCurrentPrice);
+        position.positionData[14] = abi.encode(feesCollectedUsdc);
+        position.positionData[16] = abi.encode(block.timestamp);
     }
 
     function collectFees(UniswapLib.ExecuteCollectFeesOnly memory _input) internal returns (uint256){

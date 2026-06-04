@@ -8,7 +8,7 @@ import { SendraLib } from "../../libs/Sendra.lib.sol";
 interface ILiquidityOrchestratorEvo {
     function provideLiquidity(UniswapLib.ExecuteProvideLiquidityInput calldata _input)
         external
-        returns (bytes[] memory);
+        returns (bytes[] memory positionData, uint8[] memory gFieldIdsProvider, int256[] memory gDeltasProvider);
 
     function invertSwapInput(UniswapLib.SwapInput memory _input, uint256 _amount)
         external
@@ -19,5 +19,19 @@ interface ILiquidityOrchestratorEvo {
 
     function withdrawLiquidityAndCollectFees(UniswapLib.ExecuteWithdrawLiquidityAndCollectFees calldata _input)
         external
-        returns (uint256 amountUsdcReceived, SendraLib.Position memory position);
+        returns (
+            uint256 amountUsdcReceived,
+            SendraLib.Position memory position,
+            uint8[] memory gFieldIdsProvider,
+            int256[] memory gDeltasProvider
+        );
+
+    function withdrawLiquidityAndCollectFeesFromLender(UniswapLib.ExecuteWithdrawLiquidityAndCollectFees calldata _input)
+        external
+        returns (
+            uint256 amountUsdcReceived,
+            SendraLib.Position memory position,
+            uint8[] memory gFieldIdsProvider,
+            int256[] memory gDeltasProvider
+        );
 }

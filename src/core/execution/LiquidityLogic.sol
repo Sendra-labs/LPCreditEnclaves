@@ -10,6 +10,7 @@ import { SendraLib } from "../../libs/Sendra.lib.sol";
 import { ISendraStorage } from "../../interfaces/iSendraCore/ISendraStorage.sol";
 import { AccountingManager } from "./AccountingManager.sol";
 import { IUniswapV3PositionNFT } from "../../interfaces/iSendraCore/sendraUniExec/IUniswapV3PositionNFT.sol";
+import { LPCE } from "../../libs/LPCE.lib.sol";
 
 
 /*
@@ -65,7 +66,6 @@ contract LiquidityLogic {
             uint24 fee,
             address token0, 
             address token1,
-            address user,
             UniswapLib.SwapInput swapInput0; 
             UniswapLib.SwapInput swapInput1;
         ) public onlyNotPaused {
@@ -84,7 +84,7 @@ contract LiquidityLogic {
                     token0,
                     token1,
                     address(this),
-                    user, // CHECK por que esto cambiará seguramente en el nuevo liquiOrches
+                    msg.sender,
                     amount0, 
                     amount1,
                     tickLower,
@@ -94,16 +94,24 @@ contract LiquidityLogic {
                 false 
             }) 
 
-            bytes[] memory positionData = executor.provideLiquidity(params);
+            (bytes[] memory positionData, uint8[] memory gFieldIdsProvider, int256[] memory gDeltasProvider) =
+                executor.provideLiquidity(params);
 
-            AccountingManager(ISendraAddressProvider(addressProvider).getAddress("AccountingManager")).initializePositionForEnclave(positionData);
+            address accountingManager = ISendraAddressProvider(addressProvider).getAddress("AccountingManager");
+            AccountingManager(accountingManager).initializePositionForEnclave(positionData);
+            AccountingManager(accountingManager).applyGlobalPulseDeltas(msg.sender, gFieldIdsProvider, gDeltasProvider);
 
     }
 
     function closePosition(uint256 positionId, UniswapLib.SwapInput swapInput0, UniswapLib.SwapInput swapInput1) public {
+        ISendraStorage sendraStorage = ISendraStorage(ISendraAddressProvider(addressProvider).getAddress("SendraStorage"));
+        SendraLib.Position memory position = sendraStorage.getUserPositionById(address(this), positionId);
+        uint256 uniId = abi.decode(position.positionData[9], (uint256));
 
-        SendraLib.Position memory position = AccountingManager(ISendraAddressProvider(addressProvider).getAddress("SendraStorage")).getUserPositionById(address(this), positionId);
-        uint256 uniId = position.positionData[9];
+        LPCE.Enclave memory enclave = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage"))
+            .getEnclaveByAddress(address(this));
+        address lender = enclave.lender;
+        address operator = enclave.operator;
 
         ILiquidityOrchestratorEvo executor = ILiquidityOrchestratorEvo(
             ISendraAddressProvider(addressProvider).getAddress("LiquidityOrchestratorEvo")
@@ -111,23 +119,35 @@ contract LiquidityLogic {
 
         IUniswapV3PositionNFT(ISendraAddressProvider(addressProvider).getAddress("UniswapNFTPositionManager")).approve(address(executor), uniId);
 
-        UniswapLib.ExecuteWithdrawLiquidityAndCollectFees params = UniswapLib.ExecuteWithdrawLiquidityAndCollectFees(
-            UniswapLib.WithdrawLiquidityInput({
+        UniswapLib.ExecuteWithdrawLiquidityAndCollectFees memory params = UniswapLib.ExecuteWithdrawLiquidityAndCollectFees({
+            withdrawLiquidityInput: UniswapLib.WithdrawLiquidityInput({
                 uniId: uniId,
                 positionId: positionId,
                 user: address(this)
             }),
-            swapInput0,
-            swapInput1
-        );
+            operator: operator,
+            swapInput0: swapInput0,
+            swapInput1: swapInput1
+        });
 
-        (,SendraLib.Position memory position) = executor.withdrawLiquidityAndCollectFees(params);
+        SendraLib.Position memory closedPosition;
+        uint8[] memory gFieldIdsProvider;
+        int256[] memory gDeltasProvider;
+
+        if (msg.sender == lender) {
+            (, closedPosition, gFieldIdsProvider, gDeltasProvider) =
+                executor.withdrawLiquidityAndCollectFeesFromLender(params);
+        } else {
+            (, closedPosition, gFieldIdsProvider, gDeltasProvider) =
+                executor.withdrawLiquidityAndCollectFees(params);
+        }
 
         address managerAddress = ISendraAddressProvider(addressProvider).getAddress("AccountingManager");
+        AccountingManager manager = AccountingManager(managerAddress);
 
-        AccountingManager(managerAddress).manageFullPositionForEnclave(positionId, position);
-        AccountingManager(managerAddress).decreaseGlobalPositionActivePositions(msg.sender);
-
+        manager.manageFullPositionForEnclave(positionId, closedPosition);
+        manager.applyGlobalPulseDeltas(operator, gFieldIdsProvider, gDeltasProvider);
+        manager.decreaseGlobalPositionActivePositions(address(this));
     }
 
     function depositCredit(uint256 creditInUsd) public onlyNotDeposited {
@@ -143,30 +163,61 @@ contract LiquidityLogic {
         positionData[4] = abi.encode(0); // final Value
         positionData[5] = abi.encode(0); // final date
 
-        uint256 lenderPositionId = AccountingManager(ISendraAddressProvider(addressProvider).getAddress("AccountingManager")).initializePositionForUser(msg.sender, positionData);
+        address accountingManager = ISendraAddressProvider(addressProvider).getAddress("AccountingManager");
+
+        uint256 lenderPositionId = AccountingManager(accountingManager).initializePositionForUser(msg.sender, positionData);
 
         enclaveStorage.setLenderPositionId(lenderPositionId);
-        
-        emit CreditDeposited(msg.sender, creditInUsd);
+
+        address lender = msg.sender;
+        ISendraStorage sendraStorage = ISendraStorage(ISendraAddressProvider(addressProvider).getAddress("SendraStorage"));
+
+        uint256 peakExposure = uint256(sendraStorage.getUniqueGlobalAccumulator(2, lender));
+        uint256 currentExposure = uint256(sendraStorage.getUniqueGlobalAccumulator(3, lender));
+        uint256 newExposure = currentExposure + creditInUsd;
+        uint256 firstActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(14, lender));
+        uint256 lastActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(15, lender));
+
+        uint8[] memory gFieldIds = new uint8[](6);
+        int256[] memory gDeltas = new int256[](6);
+
+        gFieldIds[0] = 0;
+        gDeltas[0] = int256(creditInUsd);
+
+        gFieldIds[1] = 2;
+        gDeltas[1] = newExposure > peakExposure ? int256(newExposure - peakExposure) : int256(0);
+
+        gFieldIds[2] = 3;
+        gDeltas[2] = int256(creditInUsd);
+
+        gFieldIds[3] = 9;
+        gDeltas[3] = 1;
+
+        gFieldIds[4] = 14;
+        gDeltas[4] = firstActivityTimestamp == 0 ? int256(block.timestamp) : int256(0);
+
+        gFieldIds[5] = 15;
+        gDeltas[5] = int256(block.timestamp - lastActivityTimestamp);
+
+        AccountingManager(accountingManager).applyGlobalPulseDeltas(
+            lender,
+            gFieldIds,
+            gDeltas
+        );
+
+        emit CreditDeposited(lender, creditInUsd);
     }
 
     function withdrawCredit() public {
-
-        SendraStorage sendraStorage = SendraStorage(ISendraAddressProvider(addressProvider).getAddress("SendraStorage"));
+        address storageAddress = ISendraAddressProvider(addressProvider).getAddress("SendraStorage");
+        ISendraStorage sendraStorage = ISendraStorage(storageAddress);
 
         SendraLib.UserInfoRead memory userInfo = sendraStorage.getUser(address(this));
         if(userInfo.activePositions > 0) revert PositionsNotClosed();
 
         EnclavesStorage enclaveStorage = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage"));
         LPCE.Enclave memory enclave = enclaveStorage.getEnclaveByAddress(address(this));
-        
-        uint256 initialCredit = enclave.creditInUsd;
-        
-        uint256 currentValue = IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).balanceOf(address(this));
-        uint256 operatorFee = enclave.operatorFee;
-        uint256 profit = currentValue > initialCredit ? currentValue - initialCredit : 0;
-        uint256 operatorProfit = profit * operatorFee / 100;
-        uint256 lenderProfit = profit - operatorProfit;
+
         address operator = enclave.operator;
         address lender = enclave.lender;
         uint256 lenderPositionId = enclave.lenderPositionId;
@@ -175,21 +226,86 @@ contract LiquidityLogic {
         SendraLib.Position memory lenderPosition = sendraStorage.getUserPositionById(lender, lenderPositionId);
         SendraLib.Position memory operatorPosition = sendraStorage.getUserPositionById(operator, operatorPositionId);
 
+        // Accounting position is source of truth for pulse (must match depositCredit deltas).
+        uint256 creditInUsd = abi.decode(lenderPosition.positionData[0], (uint256));
+        uint256 openTimestamp = abi.decode(lenderPosition.positionData[2], (uint256));
+
+        uint256 currentValue = IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).balanceOf(address(this));
+        uint256 operatorFee = enclave.operatorFee;
+        uint256 profit = currentValue > creditInUsd ? currentValue - creditInUsd : 0;
+        uint256 operatorProfit = profit * operatorFee / 100;
+        uint256 lenderProfit = profit - operatorProfit;
+
+        uint256 capitalOutToLender;
+
         if(profit > 0) {
-            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(lender, lenderProfit + initialCredit);
+            capitalOutToLender = lenderProfit + creditInUsd;
+            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(lender, capitalOutToLender);
             IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(operator, operatorProfit);
-            lenderPosition.positionData[4] = abi.encode(lenderProfit + initialCredit);
+            lenderPosition.positionData[4] = abi.encode(capitalOutToLender);
             operatorPosition.positionData[6] = abi.encode(operatorProfit);
-            lenderPosition.pnl = lenderProfit;
-            operatorPosition.pnl = operatorProfit;
+            lenderPosition.pnl = int256(lenderProfit);
+            operatorPosition.pnl = int256(operatorProfit);
         } else {
-            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(lender, currentValue);
+            capitalOutToLender = currentValue;
+            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(lender, capitalOutToLender);
             IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(operator, 0);
-            lenderPosition.positionData[4] = abi.encode(currentValue);
+            lenderPosition.positionData[4] = abi.encode(capitalOutToLender);
             operatorPosition.positionData[6] = abi.encode(0);
-            lenderPosition.pnl = initialCredit - currentValue;
+            lenderPosition.pnl = int256(creditInUsd) - int256(currentValue);
             operatorPosition.pnl = 0;
         }
+
+        int256 lenderPnl = lenderPosition.pnl;
+
+        int256 highWaterMark = sendraStorage.getUniqueGlobalAccumulator(7, lender);
+        int256 currentPnl = sendraStorage.getUniqueGlobalAccumulator(4, lender);
+        int256 newPnl = currentPnl + lenderPnl;
+        int256 maxDrawdown = sendraStorage.getUniqueGlobalAccumulator(8, lender);
+        uint256 lastActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(15, lender));
+
+        uint8[] memory gFieldIds = new uint8[](10);
+        int256[] memory gDeltas = new int256[](10);
+
+        gFieldIds[0] = 1;
+        gDeltas[0] = int256(capitalOutToLender);
+
+        gFieldIds[1] = 3;
+        gDeltas[1] = -int256(creditInUsd);
+
+        gFieldIds[2] = 4;
+        gDeltas[2] = lenderPnl;
+
+        gFieldIds[4] = 7;
+        gFieldIds[5] = 8;
+        gFieldIds[6] = 10;
+        gDeltas[6] = 1;
+
+        if(lenderPnl > 0) {
+            gFieldIds[3] = 5;
+            gDeltas[3] = lenderPnl;
+            gDeltas[4] = highWaterMark < newPnl ? newPnl - highWaterMark : int256(0);
+            gDeltas[5] = 0;
+            gFieldIds[7] = 11;
+            gDeltas[7] = 1;
+        } else {
+            gFieldIds[3] = 6;
+            gDeltas[3] = lenderPnl < 0 ? -lenderPnl : int256(0);
+            gDeltas[4] = 0;
+            int256 drawdown = (newPnl < highWaterMark) ? highWaterMark - newPnl : int256(0);
+            gDeltas[5] = maxDrawdown < drawdown ? drawdown - maxDrawdown : int256(0);
+            gFieldIds[7] = 12;
+            gDeltas[7] = lenderPnl < 0 ? 1 : 0;
+        }
+
+        gFieldIds[8] = 13;
+        gDeltas[8] = int256(block.timestamp - openTimestamp);
+
+        gFieldIds[9] = 15;
+        gDeltas[9] = int256(block.timestamp - lastActivityTimestamp);
+
+        address managerAddress = ISendraAddressProvider(addressProvider).getAddress("AccountingManager");
+        AccountingManager(managerAddress).applyGlobalPulseDeltas(lender, gFieldIds, gDeltas);
 
         lenderPosition.isActive = false;
         operatorPosition.isActive = false;
@@ -197,8 +313,6 @@ contract LiquidityLogic {
         lenderPosition.positionData[5] = abi.encode(block.timestamp);
         operatorPosition.positionData[5] = abi.encode(block.timestamp);
         operatorPosition.positionData[4] = abi.encode(currentValue);
-        
-        address managerAddress = ISendraAddressProvider(addressProvider).getAddress("AccountingManager");
 
         AccountingManager(managerAddress).updateFullPositionForUser(lender, lenderPosition.id, lenderPosition);
         AccountingManager(managerAddress).updateFullPositionForUser(operator, operatorPosition.id, operatorPosition);
@@ -211,8 +325,7 @@ contract LiquidityLogic {
         enclaveStorage.removeEnclaveFromUser(lender, 0, enclaveId);
         enclaveStorage.removeEnclaveFromUser(operator, 1, enclaveId);
 
-        emit CreditWithdrawn(lender, lenderProfit + initialCredit, operator, operatorProfit);
-
+        emit CreditWithdrawn(lender, capitalOutToLender, operator, operatorProfit);
     }
 
     function pauseExecution() public {

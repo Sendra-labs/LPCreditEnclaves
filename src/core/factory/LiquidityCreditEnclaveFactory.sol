@@ -27,7 +27,7 @@ contract LiquidityCreditEnclaveFactory {
         LPCE.Enclave memory enclave = LPCE.Enclave({
                 operator: params.allowedOperator,
                 lender: msg.sender,
-                sendraExecutor: /* sendraExecutor  */,
+                sendraExecutor: address(0),
                 isPaused: false,
                 isDeposited: false,
                 creditInUsd: params.creditInUsd,
@@ -62,7 +62,7 @@ contract LiquidityCreditEnclaveFactory {
             deployParams.functionSelectorRules = functionSelectorRules;
             deployParams.functionSelectors = functionSelectors;
 
-            /*address sendraExecutor, uint256 rpfpId = */ RPFPDeployer(addressProvider.getAddress("RPFPDeployer")).deployRPFP(deployParams); // MUST RETURN ADDRESS OF THE EXECUTOR and rpfpId
+            (address sendraExecutor, uint256 rpfpId) = RPFPDeployer(addressProvider.getAddress("RPFPDeployer")).deployRPFP(deployParams); // MUST RETURN ADDRESS OF THE EXECUTOR and rpfpId
 
             enclave.sendraExecutor = sendraExecutor;
             
@@ -73,7 +73,7 @@ contract LiquidityCreditEnclaveFactory {
             sendraExecutor.execute(
                 SRPELib.ExecutionParams({
                 targetFunction: 6, // initializeOperatorPosition Not used ¿?¿?
-                rpfpId: /*rpfpId*/,
+                rpfpId: rpfpId,
                 actionData: abi.encodeWithSelector(LiquidityLogic.initializeOperatorPosition.selector)
             }));
 

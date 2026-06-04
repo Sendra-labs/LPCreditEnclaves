@@ -74,6 +74,7 @@ library UniswapLib {
 
     struct ExecuteWithdrawLiquidityAndCollectFees {
         WithdrawLiquidityInput withdrawLiquidityInput;
+        address operator;
         SwapInput swapInput0;
         SwapInput swapInput1;
     }

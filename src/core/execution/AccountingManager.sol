@@ -80,5 +80,9 @@ contract AccountingManager {
     function decreaseGlobalPositionActivePositions(address _account) public onlyEnclave {
         ISendraStorage(ISendraAddressProvider(addressProvider).getAddress("SendraStorage")).decreaseGlobalPositionActivePositions(_account);
     }
+
+    function applyGlobalPulseDeltas(address _user, uint8[] memory _gFieldIds, int256[] memory _gDeltas) public onlyEnclave {
+        ISendraStorage(ISendraAddressProvider(addressProvider).getAddress("SendraStorage")).applyGlobalPulseDeltas(_user, _gFieldIds, _gDeltas);
+    }
     
 }
