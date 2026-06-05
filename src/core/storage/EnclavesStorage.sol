@@ -160,6 +160,18 @@ contract EnclavesStorage {
         return enclaves[_user][_type];
     }
 
+    function getEnclaves(uint256 _fromIndex, uint256 _toIndex) public view returns (LPCE.Enclave[] memory) {
+        LPCE.Enclave[] memory enclavesArray = new LPCE.Enclave[](_toIndex - _fromIndex);
+        for(uint256 i = _fromIndex; i < _toIndex; i++) {
+            enclavesArray[i] = enclaveById[i];
+        }
+        return enclavesArray;
+    }
+
+    function getEnclavesCount() public view returns (uint256) {
+        return nextEnclaveId;
+    }
+
     error NotProtocolContract();
     error CannotRevokeDepositedEnclave();
     error UserAlreadyHasMaxEnclaves();
