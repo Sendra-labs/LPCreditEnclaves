@@ -21,6 +21,7 @@ library LPCE {
         uint256 maxUsdcPerTx;
         uint256 minUsdcPerTx;
         uint256 deadline;
+        uint256 rpfpId;
         string description;
     }
 

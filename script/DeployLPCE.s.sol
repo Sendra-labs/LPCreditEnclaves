@@ -23,8 +23,10 @@ import {IAddressProviderAdmin, IRolesAdmin, SendraDeployLib} from "./interfaces/
  *   ADMIN_PK           - deployer private key (must be Sendra Roles admin)
  *   ADDRESS_PROVIDER   - existing Sendra AddressProvider
  *
- * Usage:
- *   forge script script/DeployLPCE.s.sol:DeployLPCE --rpc-url $RPC_URL --broadcast -vvvv
+ * Usage (WSL: export vars first — forge does not load .env automatically):
+ *   set -a && source .env && set +a
+ *   forge script script/DeployLPCE.s.sol:DeployLPCE --rpc-url arbitrum --broadcast -vvvv
+ *   # or: forge script ... --rpc-url $RPC_URL --broadcast -vvvv
  *
  * Optional (skip deploy, only register existing addresses):
  *   ENCLAVES_STORAGE=0x...

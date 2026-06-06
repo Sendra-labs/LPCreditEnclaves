@@ -39,6 +39,7 @@ contract LiquidityCreditEnclaveFactory {
                 maxUsdcPerTx: params.maxUsdcPerTx,
                 minUsdcPerTx: params.minUsdcPerTx,
                 deadline: params.deadline,
+                rpfpId: 0,
                 description: params.description
             });
         
@@ -64,7 +65,8 @@ contract LiquidityCreditEnclaveFactory {
             (address sendraExecutor, uint256 rpfpId) = RPFPDeployer(ISendraAddressProvider(addressProvider).getAddress("RPFPDeployer")).deployRPFP(deployParams); // MUST RETURN ADDRESS OF THE EXECUTOR and rpfpId
 
             enclave.sendraExecutor = sendraExecutor;
-            
+            enclave.rpfpId = rpfpId;
+
             uint256 enclaveId = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage")).createEnclave(enclave);
 
             AccessControlInter(ISendraAddressProvider(addressProvider).getAddress("AccessControlInter")).setIsSendraEnclave(sendraExecutor, true);
@@ -165,7 +167,7 @@ contract LiquidityCreditEnclaveFactory {
             // Time limit
             functionSelectorRules[0].rules[1] = SRPELib.Rule({
                 ruleType: 3,
-                ruleData: abi.encode(deadline, uint256(0)), 
+                ruleData: abi.encode(deadline, uint256(1)), 
                 extraData: ""
             });
 
@@ -223,7 +225,7 @@ contract LiquidityCreditEnclaveFactory {
 
             functionSelectorRules[3].rules[0] = SRPELib.Rule({
                 ruleType: 6,
-                ruleData: abi.encode(functionSelectors[3], allowedLender, uint256(0), abi.encode(creditInUsd)), // paramIndex of the creditInUsd
+                ruleData: abi.encode(functionSelectors[3], allowedLender, uint256(0), bytes32(uint256(creditInUsd))), // paramIndex of the creditInUsd
                 extraData: ""
             });
 
