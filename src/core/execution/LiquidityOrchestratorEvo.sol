@@ -311,6 +311,7 @@ contract LiquidityOrchestratorEvo {
             gFieldIdsProvider[idx] = 12;
             gDeltasProvider[idx] = 1;
             idx++;
+            gFieldIdsProvider[idx] = 1;
         }
 
         gFieldIdsProvider[idx] = 13;
@@ -326,7 +327,7 @@ contract LiquidityOrchestratorEvo {
         if(position.pnl < 0) {
             int256 newStreak = consecutiveLosses + 1;
             gDeltasProvider[idx] = 1;
-            gDeltasProvider[idx + 1] = newStreak > maxConsecutiveLosses ? newStreak - maxConsecutiveLosses : int256(0);
+            gDeltasProvider[idx + 1] = newStreak > maxConsecutiveLosses ? newStreak - maxConsecutiveLosses : int256(0);  
         } else if(position.pnl > 0) {
             gDeltasProvider[idx] = consecutiveLosses > 0 ? -consecutiveLosses : int256(0);
             gDeltasProvider[idx + 1] = 0;

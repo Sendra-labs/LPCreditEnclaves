@@ -187,7 +187,7 @@ contract LiquidityLogic {
         positionData[0] = abi.encode(creditInUsd);
         positionData[1] = abi.encode(address(this)); // address of the enclave
         positionData[2] = abi.encode(block.timestamp); // timestamp of the deposit
-        positionData[3] = abi.encode(1); // chain id
+        positionData[3] = abi.encode(100); // chain id
         positionData[4] = abi.encode(0); // final Value
         positionData[5] = abi.encode(0); // final date
 
@@ -292,49 +292,52 @@ contract LiquidityLogic {
         int256 maxDrawdown = sendraStorage.getUniqueGlobalAccumulator(8, lender);
         uint256 lastActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(15, lender));
 
-        uint8[] memory gFieldIds = new uint8[](10);
-        int256[] memory gDeltas = new int256[](10);
+        uint8[] memory lenderGFieldIds = new uint8[](11);
+        int256[] memory lenderGDeltas = new int256[](11);
 
-        gFieldIds[0] = 1;
-        gDeltas[0] = int256(capitalOutToLender);
+        lenderGFieldIds[0] = 1;
+        lenderGDeltas[0] = int256(capitalOutToLender);
 
-        gFieldIds[1] = 3;
-        gDeltas[1] = -int256(creditInUsd);
+        lenderGFieldIds[1] = 3;
+        lenderGDeltas[1] = -int256(creditInUsd);
 
-        gFieldIds[2] = 4;
-        gDeltas[2] = lenderPnl;
+        lenderGFieldIds[2] = 4;
+        lenderGDeltas[2] = lenderPnl;
 
-        gFieldIds[4] = 7;
-        gFieldIds[5] = 8;
-        gFieldIds[6] = 10;
-        gDeltas[6] = 1;
+        lenderGFieldIds[4] = 7;
+        lenderGFieldIds[5] = 8;
+        lenderGFieldIds[6] = 10;
+        lenderGFieldIds[7] = 19;
+        lenderGDeltas[6] = 1;
 
         if(lenderPnl > 0) {
-            gFieldIds[3] = 5;
-            gDeltas[3] = lenderPnl;
-            gDeltas[4] = highWaterMark < newPnl ? newPnl - highWaterMark : int256(0);
-            gDeltas[5] = 0;
-            gFieldIds[7] = 11;
-            gDeltas[7] = 1;
+            lenderGFieldIds[3] = 5;
+            lenderGDeltas[3] = lenderPnl;
+            lenderGDeltas[4] = highWaterMark < newPnl ? newPnl - highWaterMark : int256(0);
+            lenderGDeltas[5] = 0;
+            lenderGFieldIds[7] = 11;
+            lenderGDeltas[7] = 1;
+            lenderGDeltas[8] = int256(0);
         } else {
-            gFieldIds[3] = 6;
-            gDeltas[3] = lenderPnl < 0 ? -lenderPnl : int256(0);
-            gDeltas[4] = 0;
+            lenderGFieldIds[3] = 6;
+            lenderGDeltas[3] = lenderPnl < 0 ? -lenderPnl : int256(0);
+            lenderGDeltas[4] = 0;
             int256 drawdown = (newPnl < highWaterMark) ? highWaterMark - newPnl : int256(0);
-            gDeltas[5] = maxDrawdown < drawdown ? drawdown - maxDrawdown : int256(0);
-            gFieldIds[7] = 12;
-            gDeltas[7] = lenderPnl < 0 ? int256(1) : int256(0);
+            lenderGDeltas[5] = maxDrawdown < drawdown ? drawdown - maxDrawdown : int256(0);
+            lenderGFieldIds[7] = 12;
+            lenderGDeltas[7] = lenderPnl < 0 ? int256(1) : int256(0);
+            lenderGDeltas[8] = int256(abi.decode(lenderPosition.positionData[15], (uint256)));
         }
 
-        gFieldIds[8] = 13;
-        gDeltas[8] = int256(block.timestamp - openTimestamp);
+        lenderGFieldIds[8] = 13;
+        lenderGDeltas[8] = int256(block.timestamp - openTimestamp);
 
-        gFieldIds[9] = 15;
-        gDeltas[9] = int256(block.timestamp - lastActivityTimestamp);
+        lenderGFieldIds[9] = 15;
+        lenderGDeltas[9] = int256(block.timestamp - lastActivityTimestamp);
 
         address managerAddress = ISendraAddressProvider(addressProvider).getAddress("AccountingManager");
         AccountingManager manager = AccountingManager(managerAddress);
-        manager.applyGlobalPulseDeltas(lender, gFieldIds, gDeltas);
+        manager.applyGlobalPulseDeltas(lender, lenderGFieldIds, lenderGDeltas);
 
         int256 operatorPnl = operatorPosition.pnl;
         int256 operatorHighWaterMark = sendraStorage.getUniqueGlobalAccumulator(7, operator);

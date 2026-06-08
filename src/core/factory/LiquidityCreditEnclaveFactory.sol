@@ -118,6 +118,8 @@ contract LiquidityCreditEnclaveFactory {
 
         AccessControlInter(ISendraAddressProvider(addressProvider).getAddress("AccessControlInter")).setIsSendraEnclave(sendraExecutor, true);
 
+        enclaveStorage.acceptOffer(_batchId, _enclaveId, msg.sender, sendraExecutor);
+        
         UniversalExecutor(sendraExecutor).execute(
             SRPELib.ExecutionParams({
             targetFunction: 6, // initializeOperatorPosition Not used ¿?¿?
@@ -125,9 +127,13 @@ contract LiquidityCreditEnclaveFactory {
             actionData: abi.encodeWithSelector(LiquidityLogic.initializeOperatorPosition.selector)
         }));
 
-        enclaveStorage.acceptOffer(_batchId, _enclaveId, msg.sender, sendraExecutor);
-
         emit OfferAccepted(_batchId, _enclaveId, msg.sender, sendraExecutor);
+    }
+
+    function cancelOffer(uint256 _batchId, uint256 _enclaveId) public {
+        EnclavesStorage enclaveStorage = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage"));
+        enclaveStorage.cancelOffer(_batchId, _enclaveId, msg.sender);
+        emit OfferCancelled(_batchId, _enclaveId, msg.sender);
     }
 
     function createRules(
@@ -291,6 +297,7 @@ contract LiquidityCreditEnclaveFactory {
 
     event EnclaveCreated(uint256 indexed enclaveId, address indexed sendraExecutor);
     event OfferAccepted(uint256 indexed batchId, uint256 indexed enclaveId, address indexed operator, address sendraExecutor);
+    event OfferCancelled(uint256 indexed batchId, uint256 indexed enclaveId, address indexed lender);
 
     error MinUsdcPerTxCannotBeZero();
     error MaxUsdcPerTxCannotBeLessThanMinUsdcPerTx();

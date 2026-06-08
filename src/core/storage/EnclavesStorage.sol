@@ -9,7 +9,7 @@ contract EnclavesStorage {
 
     address public immutable addressProvider;
     uint256 public constant MAX_ENCLAVES_PER_USER = 15;
-    uint256 public constant MAX_ENCLAVES_PER_BATCH = 100;
+    uint256 public constant MAX_ENCLAVES_PER_BATCH = 50;
 
     constructor(address _addressProvider) {
         addressProvider = _addressProvider;
@@ -26,15 +26,15 @@ contract EnclavesStorage {
     mapping(uint256 => uint256[]) public lenderOffers; // batch id => enclaveId[]
 
     uint256 public nextEnclaveId;
-    uint256 public nextBatchId;
+    uint256 public batchId;
 
     function createEnclave(LPCE.Enclave memory enclave) public onlyProtocol returns (uint256) {
         uint256 enclaveId = nextEnclaveId;
         if(enclave.lender != address(0)) {
             addEnclaveToUser(enclave.lender, 0, enclaveId);
             if(enclave.operator == address(0)){
-                uint256 batchId = addOffer(enclaveId);
-                enclave.batchId = batchId;
+                uint256 _batchId = addOffer(enclaveId);
+                enclave.batchId = _batchId;
             }
         }
         if(enclave.operator != address(0)) addEnclaveToUser(enclave.operator, 1, enclaveId);
@@ -53,11 +53,11 @@ contract EnclavesStorage {
     }
 
     function addOffer(uint256 _enclaveId) internal returns (uint256) {
-        if(lenderOffers[nextBatchId].length >= MAX_ENCLAVES_PER_BATCH) {
-            nextBatchId++;
+        if(lenderOffers[batchId].length >= MAX_ENCLAVES_PER_BATCH) {
+            batchId++;
         }
-        lenderOffers[nextBatchId].push(_enclaveId);
-        return nextBatchId;
+        lenderOffers[batchId].push(_enclaveId);
+        return batchId;
     }
 
     function removeOffer(uint256 _batchId, uint256 _enclaveId) internal {
@@ -69,6 +69,13 @@ contract EnclavesStorage {
                 break;
             }
         }
+    }
+
+    function cancelOffer(uint256 _batchId, uint256 _enclaveId, address owner) public onlyProtocol {
+        if(enclaveById[_enclaveId].operator != address(0)) revert OfferAlreadyAccepted();
+        if(enclaveById[_enclaveId].lender != owner) revert NotOwner();
+        _removeEnclaveFromUser(enclaveById[_enclaveId].lender, 0, _enclaveId);
+        removeOffer(_batchId, _enclaveId);
     }
 
     function addEnclaveToUser(address _user, uint256 _type, uint256 _enclaveId) public onlyProtocol {
@@ -168,11 +175,25 @@ contract EnclavesStorage {
         return enclavesArray;
     }
 
+    function getEnclavesByIds(uint256[] memory _enclaveIds) public view returns (LPCE.Enclave[] memory) {
+        LPCE.Enclave[] memory enclavesArray = new LPCE.Enclave[](_enclaveIds.length);
+        for(uint256 i = 0; i < _enclaveIds.length; i++) {
+            enclavesArray[i] = enclaveById[_enclaveIds[i]];
+        }
+        return enclavesArray;
+    }
+
     function getEnclavesCount() public view returns (uint256) {
         return nextEnclaveId;
+    }
+
+    function getCurrentBatch() public view returns (uint256) {
+        return batchId;
     }
 
     error NotProtocolContract();
     error CannotRevokeDepositedEnclave();
     error UserAlreadyHasMaxEnclaves();
+    error OfferAlreadyAccepted();
+    error NotOwner();
 }
