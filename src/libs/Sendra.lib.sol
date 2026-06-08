@@ -16,25 +16,53 @@ library SendraLib {
     }
 
     struct GlobalAccumulators {
-        /*0*/ uint256 totalCapitalIn; // lender
-        /*1*/ uint256 totalCapitalOut; // lender
-        /*2*/ uint256 peakSimultaneousExposure; // lender
-        /*3*/ uint256 currentExposure; // lender
-        /*4*/ int256 cumulativeRealizedPnl; // lender
-        /*5*/ uint256 grossProfit; // lender
-        /*6*/ uint256 grossLoss; // lender
-        /*7*/ int256 highWaterMark; // lender
-        /*8*/ uint256 maxDrawdown; // lender
-        /*9*/ uint256 totalPositionsOpened; // operator each and lender
-        /*10*/ uint256 totalPositionsClosed; // operator each and lender
-        /*11*/ uint256 winCount; // operator each and lender
-        /*12*/ uint256 lossCount; // operator each and lender
-        /*13*/ uint256 totalDurationSeconds; // operator each and lender
-        /*14*/ uint256 firstActivityTimestamp; // operator and lender
-        /*15*/ uint256 lastActivityTimestamp; // operator and lender
-        /*16*/ uint256 totalLiquidationEvents; // none
-        /*17*/ uint256 consecutiveLosses; // operator each 
-        /*18*/ uint256 maxConsecutiveLosses; // operator
+        // CAPITAL
+        /// @notice Total capital deposited across all positions, ever.
+        /// @dev Denominated in the base accounting unit (e.g. USDC with 6 decimals).
+        uint256 totalCapitalIn; // 0
+        /// @notice Total capital withdrawn across all closed positions, including PnL.
+        /// @dev ROI = (totalCapitalOut - totalCapitalIn) / totalCapitalIn
+        uint256 totalCapitalOut; // 1
+        /// @notice Highest simultaneous capital at risk ever recorded across open positions.
+        /// @dev Updated on position open if current total exposure exceeds the stored peak.
+        uint256 peakSimultaneousExposure; // 2
+        uint256 currentExposure; // 3
+        // PNL
+        /// @notice Sum of realized PnL across all closed positions. Can be negative.
+        int256 cumulativeRealizedPnl; // 4
+        /// @notice Sum of PnL from winning positions only (PnL > 0).
+        uint256 grossProfit; // 5
+        /// @notice Sum of absolute PnL from losing positions only (PnL < 0), stored as positive.
+        uint256 grossLoss; // 6
+        /// @notice Highest value ever reached by cumulativeRealizedPnl. Always >= 0.
+        int256 highWaterMark; // 7
+        /// @notice Largest drop from highWaterMark ever recorded, stored as a positive magnitude.
+        uint256 maxDrawdown; // 8
+        // ACTIVITY
+        /// @notice Total number of positions opened, including currently active ones.
+        uint256 totalPositionsOpened; // 9
+        /// @notice Total number of positions fully closed.
+        uint256 totalPositionsClosed; // 10
+        /// @notice Number of closed positions with a positive realized PnL.
+        uint256 winCount; // 11
+        /// @notice Number of closed positions with a negative or zero realized PnL.
+        uint256 lossCount; // 12
+        /// @notice Cumulative duration in seconds of all closed positions.
+        uint256 totalDurationSeconds; // 13
+        // TIME
+        /// @notice Timestamp of the user's first ever position open on Sendra.
+        uint256 firstActivityTimestamp; // 14
+        /// @notice Timestamp of the most recent closed position.
+        uint256 lastActivityTimestamp; // 15
+        // RISK
+        /// @notice Total number of liquidation events suffered across all positions.
+        uint256 totalLiquidationEvents; // 16
+        /// @notice Current consecutive loss streak (resets to 0 on any winning position).
+        uint256 consecutiveLosses; // 17
+        /// @notice Longest consecutive loss streak ever recorded for this user.
+        uint256 maxConsecutiveLosses; // 18
+        /// @notice Total capital deposited across all losing positions.
+        uint256 totalLosingCapitalIn; // 19
     }
 
     struct SpecificAccumulators {

@@ -307,7 +307,7 @@ contract LiquidityLogic {
         lenderGFieldIds[4] = 7;
         lenderGFieldIds[5] = 8;
         lenderGFieldIds[6] = 10;
-        lenderGFieldIds[7] = 19;
+        lenderGFieldIds[10] = 19;
         lenderGDeltas[6] = 1;
 
         if(lenderPnl > 0) {
@@ -317,7 +317,7 @@ contract LiquidityLogic {
             lenderGDeltas[5] = 0;
             lenderGFieldIds[7] = 11;
             lenderGDeltas[7] = 1;
-            lenderGDeltas[8] = int256(0);
+            lenderGDeltas[10] = int256(0);
         } else {
             lenderGFieldIds[3] = 6;
             lenderGDeltas[3] = lenderPnl < 0 ? -lenderPnl : int256(0);
@@ -326,7 +326,7 @@ contract LiquidityLogic {
             lenderGDeltas[5] = maxDrawdown < drawdown ? drawdown - maxDrawdown : int256(0);
             lenderGFieldIds[7] = 12;
             lenderGDeltas[7] = lenderPnl < 0 ? int256(1) : int256(0);
-            lenderGDeltas[8] = int256(abi.decode(lenderPosition.positionData[0], (uint256)));
+            lenderGDeltas[10] = lenderPnl < 0 ? int256(creditInUsd) : int256(0);
         }
 
         lenderGFieldIds[8] = 13;
