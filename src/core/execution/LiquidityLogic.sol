@@ -326,7 +326,7 @@ contract LiquidityLogic {
             lenderGDeltas[5] = maxDrawdown < drawdown ? drawdown - maxDrawdown : int256(0);
             lenderGFieldIds[7] = 12;
             lenderGDeltas[7] = lenderPnl < 0 ? int256(1) : int256(0);
-            lenderGDeltas[8] = int256(abi.decode(lenderPosition.positionData[15], (uint256)));
+            lenderGDeltas[8] = int256(abi.decode(lenderPosition.positionData[0], (uint256)));
         }
 
         lenderGFieldIds[8] = 13;
