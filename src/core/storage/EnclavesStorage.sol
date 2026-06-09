@@ -45,6 +45,7 @@ contract EnclavesStorage {
     }
 
     function acceptOffer(uint256 _batchId, uint256 _enclaveId, address _operator, address _sendraExecutor) public onlyProtocol {
+        if(enclaveById[_enclaveId].operator != address(0)) revert OfferAlreadyAccepted();
         enclaveById[_enclaveId].operator = _operator;
         enclaveById[_enclaveId].sendraExecutor = _sendraExecutor;
         enclaveIdByAddress[_sendraExecutor] = _enclaveId;
@@ -62,13 +63,16 @@ contract EnclavesStorage {
 
     function removeOffer(uint256 _batchId, uint256 _enclaveId) internal {
         uint256[] memory offersArray = lenderOffers[_batchId];
+        bool found = false;
         for(uint256 i = 0; i < offersArray.length; i++) {
             if(offersArray[i] == _enclaveId) {
                 lenderOffers[_batchId][i] = offersArray[offersArray.length - 1];
                 lenderOffers[_batchId].pop();
+                found = true;
                 break;
             }
         }
+        if(!found) revert OfferNotFound();
     }
 
     function cancelOffer(uint256 _batchId, uint256 _enclaveId, address owner) public onlyProtocol {
@@ -196,4 +200,5 @@ contract EnclavesStorage {
     error UserAlreadyHasMaxEnclaves();
     error OfferAlreadyAccepted();
     error NotOwner();
+    error OfferNotFound();
 }

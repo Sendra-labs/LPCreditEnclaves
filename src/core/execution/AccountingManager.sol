@@ -98,5 +98,6 @@ contract AccountingManager {
         EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage")).revokeEnclaveListingForExecutor(
             msg.sender
         );
+        AccessControlInter(ISendraAddressProvider(addressProvider).getAddress("AccessControlInter")).setIsSendraEnclave(msg.sender, false);
     }
 }

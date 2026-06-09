@@ -25,6 +25,8 @@ contract LiquidityCreditEnclaveFactory {
 
     function createEnclave(LPCE.CreateEnclaveParams memory params) public returns (uint256, address) {
 
+        if(params.operatorFee > 100) revert OperatorFeeCannotBeGreaterThan100();
+
         LPCE.Enclave memory enclave = LPCE.Enclave({
                 operator: params.allowedOperator,
                 lender: msg.sender,
@@ -95,7 +97,7 @@ contract LiquidityCreditEnclaveFactory {
         EnclavesStorage enclaveStorage = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage"));
 
         LPCE.Enclave memory enclave = enclaveStorage.getEnclave(_enclaveId);
-        
+
         SRPELib.Rules[] memory functionSelectorRules = new SRPELib.Rules[](8);
         bytes4[] memory functionSelectors = new bytes4[](8);
 
@@ -303,5 +305,6 @@ contract LiquidityCreditEnclaveFactory {
     error MaxUsdcPerTxCannotBeLessThanMinUsdcPerTx();
     error MaxUsdcPerTxCannotBeZero();
     error DeadlineCannotBeInThePast();
+    error OperatorFeeCannotBeGreaterThan100();
 
 }

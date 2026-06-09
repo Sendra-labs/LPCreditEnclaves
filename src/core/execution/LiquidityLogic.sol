@@ -254,6 +254,8 @@ contract LiquidityLogic {
         SendraLib.Position memory lenderPosition = sendraStorage.getUserPositionById(lender, lenderPositionId);
         SendraLib.Position memory operatorPosition = sendraStorage.getUserPositionById(operator, operatorPositionId);
 
+        if(!lenderPosition.isActive) revert PositionNotActive();
+
         // Accounting position is source of truth for pulse (must match depositCredit deltas).
         uint256 creditInUsd = abi.decode(lenderPosition.positionData[0], (uint256));
         uint256 openTimestamp = abi.decode(lenderPosition.positionData[2], (uint256));
@@ -408,4 +410,5 @@ contract LiquidityLogic {
     error PositionsNotClosed();
     error OpenEnclavePositionsNotClosed();
     error OperatorPositionAlreadyInitialized();
+    error PositionNotActive();
 }

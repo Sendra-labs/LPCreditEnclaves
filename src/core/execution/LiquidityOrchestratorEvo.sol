@@ -298,32 +298,35 @@ contract LiquidityOrchestratorEvo {
         uint8 pulseLen = position.pnl != 0 ? 6 : 5;
         gFieldIdsProvider = new uint8[](pulseLen);
         gDeltasProvider = new int256[](pulseLen);
-
+        //totalPositionsClosed
         gFieldIdsProvider[0] = 10;
         gDeltasProvider[0] = 1;
 
         uint8 idx = 1;
         if(position.pnl > 0) {
+            //idx == 1 winCount
             gFieldIdsProvider[idx] = 11;
             gDeltasProvider[idx] = 1;
             idx++;
         } else if(position.pnl < 0) {
+            //idx == 1 lossCount
             gFieldIdsProvider[idx] = 12;
             gDeltasProvider[idx] = 1;
             idx++;
-            gFieldIdsProvider[idx] = 1;
         }
-
+        // idx == 2 totalDurationSeconds
         gFieldIdsProvider[idx] = 13;
         gDeltasProvider[idx] = int256(block.timestamp - abi.decode(position.positionData[2], (uint256)));
         idx++;
-
+        // idx == 3 lastActivityTimestamp
         gFieldIdsProvider[idx] = 15;
         gDeltasProvider[idx] = int256(block.timestamp - lastActivityTimestamp);
         idx++;
-
+        // idx == 4 consecutiveLosses
         gFieldIdsProvider[idx] = 17;
+        // idx == 5 maxConsecutiveLosses
         gFieldIdsProvider[idx + 1] = 18;
+        
         if(position.pnl < 0) {
             int256 newStreak = consecutiveLosses + 1;
             gDeltasProvider[idx] = 1;
