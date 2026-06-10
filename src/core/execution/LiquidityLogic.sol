@@ -278,7 +278,7 @@ contract LiquidityLogic {
             IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).transfer(operator, 0);
             lenderPosition.positionData[4] = abi.encode(capitalOutToLender);
             operatorPosition.positionData[6] = abi.encode(0);
-            lenderPosition.pnl = int256(creditInUsd) - int256(currentValue);
+            lenderPosition.pnl = int256(currentValue) - int256(creditInUsd);
             operatorPosition.pnl = 0;
         }
 
