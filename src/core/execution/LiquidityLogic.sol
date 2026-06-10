@@ -203,11 +203,10 @@ contract LiquidityLogic {
         uint256 peakExposure = uint256(sendraStorage.getUniqueGlobalAccumulator(2, lender));
         uint256 currentExposure = uint256(sendraStorage.getUniqueGlobalAccumulator(3, lender));
         uint256 newExposure = currentExposure + creditInUsd;
-        uint256 firstActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(14, lender));
         uint256 lastActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(15, lender));
 
-        uint8[] memory gFieldIds = new uint8[](6);
-        int256[] memory gDeltas = new int256[](6);
+        uint8[] memory gFieldIds = new uint8[](5);
+        int256[] memory gDeltas = new int256[](5);
 
         gFieldIds[0] = 0;
         gDeltas[0] = int256(creditInUsd);
@@ -221,11 +220,8 @@ contract LiquidityLogic {
         gFieldIds[3] = 9;
         gDeltas[3] = 1;
 
-        gFieldIds[4] = 14;
-        gDeltas[4] = firstActivityTimestamp == 0 ? int256(block.timestamp) : int256(0);
-
-        gFieldIds[5] = 15;
-        gDeltas[5] = int256(block.timestamp - lastActivityTimestamp);
+        gFieldIds[4] = 15;
+        gDeltas[4] = int256(block.timestamp - lastActivityTimestamp);
 
         AccountingManager(accountingManager).applyGlobalPulseDeltas(
             lender,

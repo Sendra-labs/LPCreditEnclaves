@@ -60,8 +60,8 @@ contract LiquidityOrchestratorEvo {
         UniswapLib.ProvideLiquidityInput memory provideLiquidityInput = _input.provideLiquidityInput;
         address operator = provideLiquidityInput.user;
 
-        gFieldIdsProvider = new uint8[](3);
-        gDeltasProvider = new int256[](3);
+        gFieldIdsProvider = new uint8[](2);
+        gDeltasProvider = new int256[](2);
 
         positionData = new bytes[](18);
 
@@ -176,17 +176,13 @@ contract LiquidityOrchestratorEvo {
             // [16] = final date
             // [17] = chainId
 
-            uint256 firstActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(14, operator));
             uint256 lastActivityTimestamp = uint256(sendraStorage.getUniqueGlobalAccumulator(15, operator));
 
             gFieldIdsProvider[0] = 9;
             gDeltasProvider[0] = 1;
 
-            gFieldIdsProvider[1] = 14;
-            gDeltasProvider[1] = firstActivityTimestamp == 0 ? int256(block.timestamp) : int256(0);
-
-            gFieldIdsProvider[2] = 15;
-            gDeltasProvider[2] = int256(block.timestamp - lastActivityTimestamp);
+            gFieldIdsProvider[1] = 15;
+            gDeltasProvider[1] = int256(block.timestamp - lastActivityTimestamp);
 
         } else if(provideLiquidityInput.protocol == UniswapLib.Protocol.UniswapV4){
             //TODO: Implement UniswapV4
