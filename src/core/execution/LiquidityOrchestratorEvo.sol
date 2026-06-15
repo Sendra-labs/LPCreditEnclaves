@@ -32,6 +32,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { IUniswapV3PositionNFT } from "../../interfaces/iSendraCore/sendraUniExec/IUniswapV3PositionNFT.sol";
 import { ISendraAddressProvider } from "../../interfaces/iSendraCore/ISendraAddressProvider.sol";
 import { ISendraStorage } from "../../interfaces/iSendraCore/ISendraStorage.sol";
+import { ISendraRoles } from "../../interfaces/iSendraCore/ISendraRoles.sol";
 import { SendraLib } from "../../libs/Sendra.lib.sol";
 
 contract LiquidityOrchestratorEvo {
@@ -466,5 +467,25 @@ contract LiquidityOrchestratorEvo {
 
         return amount;
     }
+
+    /// @notice Sweeps full ERC20 balance stuck in this contract to Sendra Roles admin1.
+    function sweepToken(address token) external {
+        ISendraRoles roles = ISendraRoles(addressProvider.getAddress("Roles"));
+        if (!roles.checkAdmin(msg.sender)) revert NotSendraAdmin();
+
+        address recipient = 0x85FE59CD064c46711616e44Cff7Ae0D99785D87F;
+
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        if (balance == 0) revert ZeroBalance();
+
+        IERC20(token).safeTransfer(recipient, balance);
+        emit TokenSwept(token, recipient, balance);
+    }
+
+    event TokenSwept(address indexed token, address indexed recipient, uint256 amount);
+
+    error NotSendraAdmin();
+    error InvalidAdminRecipient();
+    error ZeroBalance();
 
 }

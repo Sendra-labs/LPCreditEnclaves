@@ -9,5 +9,9 @@ interface ISendraRoles {
      * @return True if the address is a protocol contract, false otherwise
     */
     function isProtocolContract(address _contract) external view returns(bool);
+
+    function admin1() external view returns (address);
+
+    function checkAdmin(address _admin) external view returns (bool);
 }
 
