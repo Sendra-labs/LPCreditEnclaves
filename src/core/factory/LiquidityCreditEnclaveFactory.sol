@@ -46,8 +46,8 @@ contract LiquidityCreditEnclaveFactory {
             });
         
         if(enclave.operator != address(0)) {
-            SRPELib.Rules[] memory functionSelectorRules = new SRPELib.Rules[](8);
-            bytes4[] memory functionSelectors = new bytes4[](8);
+            SRPELib.Rules[] memory functionSelectorRules = new SRPELib.Rules[](9);
+            bytes4[] memory functionSelectors = new bytes4[](9);
 
             (functionSelectorRules, functionSelectors) = createRules(
                 params.creditInUsd, 
@@ -98,8 +98,8 @@ contract LiquidityCreditEnclaveFactory {
 
         LPCE.Enclave memory enclave = enclaveStorage.getEnclave(_enclaveId);
 
-        SRPELib.Rules[] memory functionSelectorRules = new SRPELib.Rules[](8);
-        bytes4[] memory functionSelectors = new bytes4[](8);
+        SRPELib.Rules[] memory functionSelectorRules = new SRPELib.Rules[](9);
+        bytes4[] memory functionSelectors = new bytes4[](9);
 
         (functionSelectorRules, functionSelectors) = createRules(
             enclave.creditInUsd, 
@@ -153,9 +153,9 @@ contract LiquidityCreditEnclaveFactory {
         if(deadline <= block.timestamp) revert DeadlineCannotBeInThePast();
 
         
-        functionSelectorRules = new SRPELib.Rules[](8);
+        functionSelectorRules = new SRPELib.Rules[](9);
 
-        functionSelectors = new bytes4[](8);
+        functionSelectors = new bytes4[](9);
 
         // Provide Liquidity
         functionSelectors[0] = LiquidityLogic.provideLiquidity.selector;
@@ -280,7 +280,7 @@ contract LiquidityCreditEnclaveFactory {
                 extraData: ""
             });
 
-        // revoke enclave (operator only, before deposit)
+        // revoke enclave (operator only, before deposit) // CHECK why not allowedLender?
         functionSelectors[7] = LiquidityLogic.revokeEnclave.selector;
 
         functionSelectorRules[7] = SRPELib.Rules({
@@ -289,8 +289,22 @@ contract LiquidityCreditEnclaveFactory {
         });
 
             functionSelectorRules[7].rules[0] = SRPELib.Rule({
-                ruleType: 5,
-                ruleData: abi.encode(functionSelectors[7], allowedOperator),
+                ruleType: 1,
+                ruleData: abi.encode(allowedSenders),
+                extraData: ""
+            });
+
+        // provide liquidity no accounting (test rulesonly)
+        functionSelectors[8] = LiquidityLogic.provideLiquidityNoAccountingTest.selector;
+
+        functionSelectorRules[8] = SRPELib.Rules({
+            ruleCount: 1,
+            rules: new SRPELib.Rule[](1)
+        });
+
+            functionSelectorRules[8].rules[0] = SRPELib.Rule({
+                ruleType: 1,
+                ruleData: abi.encode(allowedSenders),
                 extraData: ""
             });
 

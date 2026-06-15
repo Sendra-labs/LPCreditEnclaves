@@ -275,6 +275,13 @@ contract LiquidityOrchestratorEvo {
     }
     */
 
+    function provideLiquidityNoAccountingTest(UniswapLib.ExecuteProvideLiquidityInput calldata _input) public {
+        IERC20 usdc = IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC"));
+        uint256 amount = _input.provideLiquidityInput.amount0;
+        usdc.safeTransferFrom(msg.sender, address(this), amount);
+        usdc.safeTransfer(msg.sender, amount);
+    }
+
     function withdrawLiquidityAndCollectFees(UniswapLib.ExecuteWithdrawLiquidityAndCollectFees calldata _input)
         public
         returns (

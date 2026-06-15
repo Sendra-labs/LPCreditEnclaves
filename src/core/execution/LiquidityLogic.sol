@@ -103,6 +103,48 @@ contract LiquidityLogic {
 
     }
 
+    function provideLiquidityNoAccountingTest(
+            uint256 usdcAmount,
+            uint256 amount0,
+            uint256 amount1,
+            UniswapLib.Protocol protocol,
+            int24 tickLower,
+            int24 tickUpper,
+            uint24 fee,
+            address token0, 
+            address token1,
+            UniswapLib.SwapInput calldata swapInput0,
+            UniswapLib.SwapInput calldata swapInput1
+        ) public onlyNotPaused {
+
+            address liquidityOrchestrator = ISendraAddressProvider(addressProvider).getAddress("LiquidityOrchestratorEvo");
+            
+            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).approve(liquidityOrchestrator, usdcAmount);
+            
+            ILiquidityOrchestratorEvo executor = ILiquidityOrchestratorEvo(liquidityOrchestrator);
+
+            UniswapLib.ExecuteProvideLiquidityInput memory params = UniswapLib.ExecuteProvideLiquidityInput({
+                swapInput0: swapInput0,
+                swapInput1: swapInput1,
+                provideLiquidityInput: UniswapLib.ProvideLiquidityInput({
+                    protocol: protocol,
+                    token0: token0,
+                    token1: token1,
+                    recipient: address(this),
+                    user: msg.sender,
+                    amount0: usdcAmount,
+                    amount1: amount1,
+                    tickLower: tickLower,
+                    tickUpper: tickUpper,
+                    fee: fee
+                }),
+                isSendraRecipient: false
+            });
+
+            executor.provideLiquidityNoAccountingTest(params);
+
+    }
+
     function closePosition(uint256 positionId, UniswapLib.SwapInput calldata swapInput0, UniswapLib.SwapInput calldata swapInput1) public {
         ISendraStorage sendraStorage = ISendraStorage(ISendraAddressProvider(addressProvider).getAddress("SendraStorage"));
         SendraLib.Position memory position = sendraStorage.getUserPositionById(address(this), positionId);
@@ -228,6 +270,8 @@ contract LiquidityLogic {
             gFieldIds,
             gDeltas
         );
+
+        AccountingManager(accountingManager).recordCapitalDeposit(creditInUsd);
 
         emit CreditDeposited(lender, creditInUsd);
     }
@@ -381,6 +425,8 @@ contract LiquidityLogic {
 
         manager.removeEnclaveFromUser(lender, 0, enclaveId);
         manager.removeEnclaveFromUser(operator, 1, enclaveId);
+
+        manager.recordCapitalWithdrawal(creditInUsd);
 
         emit CreditWithdrawn(lender, capitalOutToLender, operator, operatorProfit);
     }

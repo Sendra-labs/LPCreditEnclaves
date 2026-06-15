@@ -9,6 +9,7 @@ import {AccountingManager} from "../src/core/execution/AccountingManager.sol";
 import {LiquidityLogic} from "../src/core/execution/LiquidityLogic.sol";
 import {LiquidityOrchestratorEvo} from "../src/core/execution/LiquidityOrchestratorEvo.sol";
 import {LiquidityCreditEnclaveFactory} from "../src/core/factory/LiquidityCreditEnclaveFactory.sol";
+import {CapitalUnderManagement} from "../src/core/storage/CapitalUnderManagement.sol";
 import {IAddressProviderAdmin, IRolesAdmin, SendraDeployLib} from "./interfaces/SendraDeploy.sol";
 
 /**
@@ -41,6 +42,7 @@ contract DeployLPCE is Script {
         EnclavesStorage enclavesStorage;
         AccessControlInter accessControlInter;
         AccountingManager accountingManager;
+        CapitalUnderManagement capitalUnderManagement;
         LiquidityLogic liquidityLogic;
         LiquidityOrchestratorEvo liquidityOrchestratorEvo;
         LiquidityCreditEnclaveFactory factory;
@@ -49,6 +51,7 @@ contract DeployLPCE is Script {
     string internal constant KEY_ENCLAVES_STORAGE = "EnclavesStorage";
     string internal constant KEY_ACCESS_CONTROL = "AccessControlInter";
     string internal constant KEY_ACCOUNTING_MANAGER = "AccountingManager";
+    string internal constant KEY_CAPITAL_UNDER_MANAGEMENT = "CapitalUnderManagement";
     string internal constant KEY_LIQUIDITY_LOGIC = "LiquidityLogic";
     string internal constant KEY_LIQUIDITY_ORCHESTRATOR_EVO = "LiquidityOrchestratorEvo";
     string internal constant KEY_FACTORY = "LiquidityCreditEnclaveFactory";
@@ -95,6 +98,7 @@ contract DeployLPCE is Script {
         d.enclavesStorage = _loadOrDeployEnclavesStorage(addressProviderAddr);
         d.accessControlInter = _loadOrDeployAccessControlInter(addressProviderAddr);
         d.accountingManager = _loadOrDeployAccountingManager(addressProviderAddr);
+        d.capitalUnderManagement = _loadOrDeployCapitalUnderManagement(addressProviderAddr);
         d.liquidityLogic = _loadOrDeployLiquidityLogic(addressProviderAddr);
         d.liquidityOrchestratorEvo = _loadOrDeployLiquidityOrchestratorEvo(addressProviderAddr);
         d.factory = _loadOrDeployFactory(addressProviderAddr);
@@ -130,6 +134,17 @@ contract DeployLPCE is Script {
         }
         AccountingManager deployed = new AccountingManager(ap);
         console2.log("Deployed AccountingManager:", address(deployed));
+        return deployed;
+    }
+
+    function _loadOrDeployCapitalUnderManagement(address ap) internal returns (CapitalUnderManagement) {
+        address existing = vm.envOr("CAPITAL_UNDER_MANAGEMENT", address(0));
+        if (existing != address(0)) {
+            console2.log("Using CAPITAL_UNDER_MANAGEMENT:", existing);
+            return CapitalUnderManagement(existing);
+        }
+        CapitalUnderManagement deployed = new CapitalUnderManagement(ap);
+        console2.log("Deployed CapitalUnderManagement:", address(deployed));
         return deployed;
     }
 
@@ -182,6 +197,7 @@ contract DeployLPCE is Script {
         ap.setAddress(KEY_ENCLAVES_STORAGE, address(d.enclavesStorage));
         ap.setAddress(KEY_ACCESS_CONTROL, address(d.accessControlInter));
         ap.setAddress(KEY_ACCOUNTING_MANAGER, address(d.accountingManager));
+        ap.setAddress(KEY_CAPITAL_UNDER_MANAGEMENT, address(d.capitalUnderManagement));
         ap.setAddress(KEY_LIQUIDITY_LOGIC, address(d.liquidityLogic));
         ap.setAddress(KEY_LIQUIDITY_ORCHESTRATOR_EVO, address(d.liquidityOrchestratorEvo));
         ap.setAddress(KEY_FACTORY, address(d.factory));
@@ -193,6 +209,7 @@ contract DeployLPCE is Script {
         _allowIfNeeded(roles, address(d.enclavesStorage), KEY_ENCLAVES_STORAGE);
         _allowIfNeeded(roles, address(d.accessControlInter), KEY_ACCESS_CONTROL);
         _allowIfNeeded(roles, address(d.accountingManager), KEY_ACCOUNTING_MANAGER);
+        _allowIfNeeded(roles, address(d.capitalUnderManagement), KEY_CAPITAL_UNDER_MANAGEMENT);
         _allowIfNeeded(roles, address(d.factory), KEY_FACTORY);
     }
 
@@ -210,6 +227,7 @@ contract DeployLPCE is Script {
         console2.log("EnclavesStorage:", address(d.enclavesStorage));
         console2.log("AccessControlInter:", address(d.accessControlInter));
         console2.log("AccountingManager:", address(d.accountingManager));
+        console2.log("CapitalUnderManagement:", address(d.capitalUnderManagement));
         console2.log("LiquidityLogic:", address(d.liquidityLogic));
         console2.log("LiquidityOrchestratorEvo:", address(d.liquidityOrchestratorEvo));
         console2.log("LiquidityCreditEnclaveFactory:", address(d.factory));

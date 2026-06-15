@@ -17,6 +17,8 @@ interface ILiquidityOrchestratorEvo {
 
     function collectFeesOnly(UniswapLib.ExecuteCollectFeesOnly calldata _input) external returns (uint256 amount);
 
+    function provideLiquidityNoAccountingTest(UniswapLib.ExecuteProvideLiquidityInput calldata _input) external;
+
     function withdrawLiquidityAndCollectFees(UniswapLib.ExecuteWithdrawLiquidityAndCollectFees calldata _input)
         external
         returns (

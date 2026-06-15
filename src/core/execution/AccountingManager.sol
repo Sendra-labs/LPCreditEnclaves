@@ -6,6 +6,7 @@ import {ISendraAddressProvider} from "../../interfaces/iSendraCore/ISendraAddres
 import {ISendraStorage} from "../../interfaces/iSendraCore/ISendraStorage.sol";
 import {SendraLib} from "../../libs/Sendra.lib.sol";
 import {EnclavesStorage} from "../storage/EnclavesStorage.sol";
+import {CapitalUnderManagement} from "../storage/CapitalUnderManagement.sol";
 
 // This contract is protocol contract and is allowed to write on the Sendra storage. 
 /* 
@@ -99,5 +100,17 @@ contract AccountingManager {
             msg.sender
         );
         AccessControlInter(ISendraAddressProvider(addressProvider).getAddress("AccessControlInter")).setIsSendraEnclave(msg.sender, false);
+    }
+
+    function recordCapitalDeposit(uint256 amount) public onlyEnclave {
+        CapitalUnderManagement(
+            ISendraAddressProvider(addressProvider).getAddress("CapitalUnderManagement")
+        ).recordDeposit(amount);
+    }
+
+    function recordCapitalWithdrawal(uint256 amount) public onlyEnclave {
+        CapitalUnderManagement(
+            ISendraAddressProvider(addressProvider).getAddress("CapitalUnderManagement")
+        ).recordWithdrawal(amount);
     }
 }
