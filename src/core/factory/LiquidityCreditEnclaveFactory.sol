@@ -46,8 +46,8 @@ contract LiquidityCreditEnclaveFactory {
             });
         
         if(enclave.operator != address(0)) {
-            SRPELib.Rules[] memory functionSelectorRules = new SRPELib.Rules[](9);
-            bytes4[] memory functionSelectors = new bytes4[](9);
+            SRPELib.Rules[] memory functionSelectorRules = new SRPELib.Rules[](18);
+            bytes4[] memory functionSelectors = new bytes4[](18);
 
             (functionSelectorRules, functionSelectors) = createRules(
                 params.creditInUsd, 
@@ -98,8 +98,8 @@ contract LiquidityCreditEnclaveFactory {
 
         LPCE.Enclave memory enclave = enclaveStorage.getEnclave(_enclaveId);
 
-        SRPELib.Rules[] memory functionSelectorRules = new SRPELib.Rules[](9);
-        bytes4[] memory functionSelectors = new bytes4[](9);
+        SRPELib.Rules[] memory functionSelectorRules = new SRPELib.Rules[](18);
+        bytes4[] memory functionSelectors = new bytes4[](18);
 
         (functionSelectorRules, functionSelectors) = createRules(
             enclave.creditInUsd, 
@@ -153,9 +153,9 @@ contract LiquidityCreditEnclaveFactory {
         if(deadline <= block.timestamp) revert DeadlineCannotBeInThePast();
 
         
-        functionSelectorRules = new SRPELib.Rules[](9);
+        functionSelectorRules = new SRPELib.Rules[](18);
 
-        functionSelectors = new bytes4[](9);
+        functionSelectors = new bytes4[](18);
 
         // Provide Liquidity
         functionSelectors[0] = LiquidityLogic.provideLiquidity.selector;
@@ -308,7 +308,75 @@ contract LiquidityCreditEnclaveFactory {
                 extraData: ""
             });
 
+        // Spot buy. USDC is argument 0. Opens risk: operator, band, deadline.
+        functionSelectors[9] = LiquidityLogic.buySpot.selector;
+        functionSelectorRules[9] = _openRisk(functionSelectors[9], 0, minUsdcPerTx, maxUsdcPerTx, deadline, allowedOperator);
+
+        // Spot sell. Close: lender or operator, no deadline.
+        functionSelectors[10] = LiquidityLogic.sellSpot.selector;
+        functionSelectorRules[10] = _eitherParty(allowedSenders);
+
+        // Aave opens. USDC is argument 1 (asset, usdcAmount, ...).
+        functionSelectors[11] = LiquidityLogic.openSupply.selector;
+        functionSelectorRules[11] = _openRisk(functionSelectors[11], 1, minUsdcPerTx, maxUsdcPerTx, deadline, allowedOperator);
+
+        functionSelectors[12] = LiquidityLogic.openLoop.selector;
+        functionSelectorRules[12] = _openRisk(functionSelectors[12], 1, minUsdcPerTx, maxUsdcPerTx, deadline, allowedOperator);
+
+        functionSelectors[13] = LiquidityLogic.openShort.selector;
+        functionSelectorRules[13] = _openRisk(functionSelectors[13], 1, minUsdcPerTx, maxUsdcPerTx, deadline, allowedOperator);
+
+        functionSelectors[14] = LiquidityLogic.openLeveraged.selector;
+        functionSelectorRules[14] = _openRisk(functionSelectors[14], 1, minUsdcPerTx, maxUsdcPerTx, deadline, allowedOperator);
+
+        // Aave closes. Lender or operator, including after the deadline.
+        functionSelectors[15] = LiquidityLogic.closeStrategy.selector;
+        functionSelectorRules[15] = _eitherParty(allowedSenders);
+
+        functionSelectors[16] = LiquidityLogic.releaseShort.selector;
+        functionSelectorRules[16] = _eitherParty(allowedSenders);
+
+        functionSelectors[17] = LiquidityLogic.closeLeveraged.selector;
+        functionSelectorRules[17] = _eitherParty(allowedSenders);
+
         return (functionSelectorRules, functionSelectors);
+    }
+
+    function _openRisk(
+        bytes4 selector,
+        uint256 paramIndex,
+        uint256 minUsdcPerTx,
+        uint256 maxUsdcPerTx,
+        uint256 deadline,
+        address allowedOperator
+    ) internal pure returns (SRPELib.Rules memory) {
+        SRPELib.Rule[] memory rules = new SRPELib.Rule[](3);
+        rules[0] = SRPELib.Rule({
+            ruleType: 8,
+            ruleData: abi.encode(minUsdcPerTx, maxUsdcPerTx),
+            extraData: abi.encode(paramIndex)
+        });
+        rules[1] = SRPELib.Rule({
+            ruleType: 3,
+            ruleData: abi.encode(deadline, uint256(1)),
+            extraData: ""
+        });
+        rules[2] = SRPELib.Rule({
+            ruleType: 5,
+            ruleData: abi.encode(selector, allowedOperator),
+            extraData: ""
+        });
+        return SRPELib.Rules({ruleCount: 3, rules: rules});
+    }
+
+    function _eitherParty(address[] memory allowedSenders) internal pure returns (SRPELib.Rules memory) {
+        SRPELib.Rule[] memory rules = new SRPELib.Rule[](1);
+        rules[0] = SRPELib.Rule({
+            ruleType: 1,
+            ruleData: abi.encode(allowedSenders),
+            extraData: ""
+        });
+        return SRPELib.Rules({ruleCount: 1, rules: rules});
     }
 
     event EnclaveCreated(uint256 indexed enclaveId, address indexed sendraExecutor);

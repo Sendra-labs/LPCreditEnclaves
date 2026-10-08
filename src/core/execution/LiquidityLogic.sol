@@ -431,6 +431,121 @@ contract LiquidityLogic {
         emit CreditWithdrawn(lender, capitalOutToLender, operator, operatorProfit);
     }
 
+    function buySpot(uint256 usdcAmount, UniswapLib.SwapInput calldata input) external onlyNotPaused {
+        usdcAmount;
+        input;
+        _desk();
+    }
+
+    function sellSpot(UniswapLib.SwapInput calldata input) external {
+        input;
+        _desk();
+    }
+
+    function openSupply(address asset, uint256 usdcAmount, UniswapLib.SwapInput calldata swap) external onlyNotPaused {
+        asset;
+        usdcAmount;
+        swap;
+        _desk();
+    }
+
+    function openLoop(
+        address asset,
+        uint256 usdcAmount,
+        uint8 loops,
+        uint16 borrowBps,
+        UniswapLib.SwapInput calldata swap
+    ) external onlyNotPaused {
+        asset;
+        usdcAmount;
+        loops;
+        borrowBps;
+        swap;
+        _desk();
+    }
+
+    function openShort(
+        address asset,
+        uint256 usdcAmount,
+        uint8 loops,
+        uint16 borrowBps,
+        bool releaseToOwner,
+        UniswapLib.SwapInput calldata sellAsset
+    ) external onlyNotPaused {
+        asset;
+        usdcAmount;
+        loops;
+        borrowBps;
+        releaseToOwner;
+        sellAsset;
+        _desk();
+    }
+
+    function openLeveraged(
+        address asset,
+        uint256 usdcAmount,
+        uint16 borrowBps,
+        UniswapLib.SwapInput calldata buyAsset,
+        bool collateralIsAsset,
+        bytes calldata lpData
+    ) external onlyNotPaused {
+        asset;
+        usdcAmount;
+        borrowBps;
+        buyAsset;
+        collateralIsAsset;
+        lpData;
+        _desk();
+    }
+
+    function closeStrategy(
+        address account,
+        uint256 positionId,
+        uint256 fundAmount,
+        UniswapLib.SwapInput calldata swap
+    ) external {
+        account;
+        positionId;
+        fundAmount;
+        swap;
+        _desk();
+    }
+
+    function releaseShort(address account, uint256 positionId) external {
+        account;
+        positionId;
+        _desk();
+    }
+
+    function closeLeveraged(
+        address account,
+        uint256 positionId,
+        uint256 fundAmount,
+        uint256 uniId,
+        uint256 lpPositionId,
+        bytes calldata exitData
+    ) external {
+        account;
+        positionId;
+        fundAmount;
+        uniId;
+        lpPositionId;
+        exitData;
+        _desk();
+    }
+
+    /// @dev Second delegatecall. msg.data is still the LiquidityLogic selector,
+    ///      and address(this) is still the enclave executor.
+    function _desk() internal {
+        address desk = ISendraAddressProvider(addressProvider).getAddress("EnclaveDesk");
+        (bool ok, bytes memory reason) = desk.delegatecall(msg.data);
+        if (!ok) {
+            assembly {
+                revert(add(reason, 32), mload(reason))
+            }
+        }
+    }
+
     function pauseExecution() public {
         EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage")).pauseExecution();
         emit ExecutionPaused();

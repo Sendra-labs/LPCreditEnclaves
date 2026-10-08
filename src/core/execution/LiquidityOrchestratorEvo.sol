@@ -245,22 +245,8 @@ contract LiquidityOrchestratorEvo {
         bool isSwapNeeded0 = _input.swapInput0.tokenIn != _input.swapInput0.tokenOut;
         bool isSwapNeeded1 = _input.swapInput1.tokenIn != _input.swapInput1.tokenOut;
 
-        if(isSwapNeeded0 && amount0 > 0) {
-            IERC20(_input.swapInput0.tokenIn).safeTransfer(address(swapRouter), amount0);
-            UniswapLib.SwapInput memory swap0 = _input.swapInput0;
-            swap0.to = address(this);
-            swap0.amountIn0 = amount0;
-            if(swap0.swapInstructions.length > 0) swap0.swapInstructions[0].amountIn = amount0;
-            swapRouter.executeSwap(swap0);
-        }
-        if(isSwapNeeded1 && amount1 > 0) {
-            IERC20(_input.swapInput1.tokenIn).safeTransfer(address(swapRouter), amount1);
-            UniswapLib.SwapInput memory swap1 = _input.swapInput1;
-            swap1.to = address(this);
-            swap1.amountIn0 = amount1;
-            if(swap1.swapInstructions.length > 0) swap1.swapInstructions[0].amountIn = amount1;
-            swapRouter.executeSwap(swap1);
-        }
+        if(isSwapNeeded0 && amount0 > 0) _executeScaledSwap(_input.swapInput0, amount0);
+        if(isSwapNeeded1 && amount1 > 0) _executeScaledSwap(_input.swapInput1, amount1);
 
         uint256 newBalance = IERC20(_input.swapInput0.tokenOut).balanceOf(address(this));
         uint256 amount = newBalance - prevBalance;
@@ -403,22 +389,8 @@ contract LiquidityOrchestratorEvo {
         bool isSwapNeeded0 = _input.swapInput0.tokenIn != _input.swapInput0.tokenOut;
         bool isSwapNeeded1 = _input.swapInput1.tokenIn != _input.swapInput1.tokenOut;
 
-        if(isSwapNeeded0 && amount0 > 0) {
-            IERC20(_input.swapInput0.tokenIn).safeTransfer(address(swapRouter), amount0);
-            UniswapLib.SwapInput memory swap0 = _input.swapInput0;
-            swap0.to = address(this);
-            swap0.amountIn0 = amount0;
-            if(swap0.swapInstructions.length > 0) swap0.swapInstructions[0].amountIn = amount0;
-            swapRouter.executeSwap(swap0);
-        }
-        if(isSwapNeeded1 && amount1 > 0) {
-            IERC20(_input.swapInput1.tokenIn).safeTransfer(address(swapRouter), amount1);
-            UniswapLib.SwapInput memory swap1 = _input.swapInput1;
-            swap1.to = address(this);
-            swap1.amountIn0 = amount1;
-            if(swap1.swapInstructions.length > 0) swap1.swapInstructions[0].amountIn = amount1;
-            swapRouter.executeSwap(swap1);
-        }
+        if(isSwapNeeded0 && amount0 > 0) _executeScaledSwap(_input.swapInput0, amount0);
+        if(isSwapNeeded1 && amount1 > 0) _executeScaledSwap(_input.swapInput1, amount1);
 
         uint256 newBalance = IERC20(_input.swapInput0.tokenOut).balanceOf(address(this));
         amountUsdcReceived = newBalance - prevBalance;
@@ -445,27 +417,115 @@ contract LiquidityOrchestratorEvo {
         bool isSwapNeeded0 = _input.swapInput0.tokenIn != _input.swapInput0.tokenOut;
         bool isSwapNeeded1 = _input.swapInput1.tokenIn != _input.swapInput1.tokenOut;
 
-        if(isSwapNeeded0 && amount0 > 0) {
-            IERC20(_input.swapInput0.tokenIn).safeTransfer(address(swapRouter), amount0);
-            UniswapLib.SwapInput memory swap0 = _input.swapInput0;
-            swap0.to = address(this);
-            swap0.amountIn0 = amount0;
-            if(swap0.swapInstructions.length > 0) swap0.swapInstructions[0].amountIn = amount0;
-            swapRouter.executeSwap(swap0);
-        }
-        if(isSwapNeeded1 && amount1 > 0) {
-            IERC20(_input.swapInput1.tokenIn).safeTransfer(address(swapRouter), amount1);
-            UniswapLib.SwapInput memory swap1 = _input.swapInput1;
-            swap1.to = address(this);
-            swap1.amountIn0 = amount1;
-            if(swap1.swapInstructions.length > 0) swap1.swapInstructions[0].amountIn = amount1;
-            swapRouter.executeSwap(swap1);
-        }
+        if(isSwapNeeded0 && amount0 > 0) _executeScaledSwap(_input.swapInput0, amount0);
+        if(isSwapNeeded1 && amount1 > 0) _executeScaledSwap(_input.swapInput1, amount1);
 
         uint256 newBalance = IERC20(_input.swapInput0.tokenOut).balanceOf(address(this));
         uint256 amount = newBalance - prevBalance;
 
         return amount;
+    }
+
+    /// @dev Sell `amount` along the quoted route. Root amountIns are weights.
+    ///      amountOut floors scale with the slice, so a fee swap does not have to
+    ///      clear the minimum quoted for the whole position.
+    function _executeScaledSwap(UniswapLib.SwapInput memory swap, uint256 amount) internal {
+        IERC20(swap.tokenIn).safeTransfer(address(swapRouter), amount);
+        swapRouter.executeSwap(_scaledSwap(swap, swap.tokenIn, swap.tokenOut, amount));
+    }
+
+    error InvertedSwapMissing(address token);
+
+    /// @dev Rescale a frontend-built sell route so every root hop sums to `amount`.
+    ///      Hops with amountIn 0 are intermediate steps of a chain and stay 0.
+    function _scaledSwap(
+        UniswapLib.SwapInput memory swap,
+        address tokenIn,
+        address tokenOut,
+        uint256 amount
+    ) internal view returns (UniswapLib.SwapInput memory) {
+        if (swap.tokenIn != tokenIn || swap.tokenOut != tokenOut) revert InvertedSwapMissing(tokenIn);
+
+        uint256 n = swap.swapInstructions.length;
+        uint256 weight = 0;
+        uint256 roots = 0;
+        for (uint256 i = 0; i < n; i++) {
+            if (swap.swapInstructions[i].amountIn > 0) {
+                weight += swap.swapInstructions[i].amountIn;
+                roots++;
+            }
+        }
+        if (weight == 0 || roots == 0) revert InvertedSwapMissing(tokenIn);
+
+        uint256[] memory scaled = new uint256[](n);
+        uint256 assigned = 0;
+        uint256 seen = 0;
+        for (uint256 i = 0; i < n; i++) {
+            uint256 hopIn = swap.swapInstructions[i].amountIn;
+            if (hopIn == 0) continue;
+            seen++;
+            uint256 part = seen == roots ? amount - assigned : (amount * hopIn) / weight;
+            scaled[i] = part;
+            assigned += part;
+        }
+
+        uint256 outLen = 0;
+        for (uint256 i = 0; i < n;) {
+            if (swap.swapInstructions[i].amountIn == 0) {
+                i++;
+                continue;
+            }
+            if (scaled[i] == 0) {
+                i++;
+                while (i < n && swap.swapInstructions[i].amountIn == 0) i++;
+                continue;
+            }
+            outLen++;
+            i++;
+            while (i < n && swap.swapInstructions[i].amountIn == 0) {
+                outLen++;
+                i++;
+            }
+        }
+        if (outLen == 0) revert InvertedSwapMissing(tokenIn);
+
+        UniswapLib.SwapInstruction[] memory nextInstructions = new UniswapLib.SwapInstruction[](outLen);
+        uint256 w = 0;
+        for (uint256 i = 0; i < n;) {
+            if (swap.swapInstructions[i].amountIn == 0) {
+                i++;
+                continue;
+            }
+            if (scaled[i] == 0) {
+                i++;
+                while (i < n && swap.swapInstructions[i].amountIn == 0) i++;
+                continue;
+            }
+            uint256 origRoot = swap.swapInstructions[i].amountIn;
+            uint256 part = scaled[i];
+            nextInstructions[w] = swap.swapInstructions[i];
+            nextInstructions[w].amountIn = part;
+            nextInstructions[w].amountOut = _scaleAmountOut(nextInstructions[w].amountOut, part, origRoot);
+            w++;
+            i++;
+            while (i < n && swap.swapInstructions[i].amountIn == 0) {
+                nextInstructions[w] = swap.swapInstructions[i];
+                nextInstructions[w].amountIn = 0;
+                nextInstructions[w].amountOut = _scaleAmountOut(nextInstructions[w].amountOut, part, origRoot);
+                w++;
+                i++;
+            }
+        }
+
+        swap.swapInstructions = nextInstructions;
+        swap.amountIn0 = amount;
+        swap.to = address(this);
+        return swap;
+    }
+
+    function _scaleAmountOut(uint256 amountOut, uint256 part, uint256 origRoot) private pure returns (uint256) {
+        if (amountOut == 0 || origRoot == 0) return 0;
+        return (amountOut * part) / origRoot;
     }
 
     /// @notice Sweeps full ERC20 balance stuck in this contract to Sendra Roles admin1.
