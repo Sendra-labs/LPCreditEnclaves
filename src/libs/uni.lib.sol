@@ -39,6 +39,13 @@ library UniswapLib {
         address to; // recipient
     }
 
+    /// @notice One leveraged-basket leg. The ruler cannot see this: it sits in a dynamic array.
+    struct BasketBuy {
+        address asset;
+        uint16 borrowBps;
+        SwapInput swap;
+    }
+
     struct ProvideLiquidityInput {
         Protocol protocol;
         address token0; 
