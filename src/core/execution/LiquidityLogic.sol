@@ -1,15 +1,16 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import { ILiquidityOrchestratorEvo } from "../../interfaces/iSendraCore/ILiquidityOrchestratorEvo.sol";
 import { ISendraAddressProvider } from "../../interfaces/iSendraCore/ISendraAddressProvider.sol";
 import { UniswapLib } from "../../libs/uni.lib.sol";
+import { AccountLp, ISendraLpAccount } from "../../libs/AccountLp.sol";
+import { EnclaveAccounts, IAccountsManager } from "../../libs/EnclaveAccounts.sol";
 import { EnclavesStorage } from "../storage/EnclavesStorage.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { SendraLib } from "../../libs/Sendra.lib.sol";
 import { ISendraStorage } from "../../interfaces/iSendraCore/ISendraStorage.sol";
 import { AccountingManager } from "./AccountingManager.sol";
-import { IUniswapV3PositionNFT } from "../../interfaces/iSendraCore/sendraUniExec/IUniswapV3PositionNFT.sol";
 import { LPCE } from "../../libs/LPCE.lib.sol";
 
 
@@ -22,6 +23,7 @@ Deployment instructions:
 
 */
 contract LiquidityLogic {
+    using SafeERC20 for IERC20;
 
     address public immutable addressProvider;
 
@@ -56,140 +58,102 @@ contract LiquidityLogic {
         enclaveStorage.setOperatorPositionId(operatorPositionId);
     }
 
+    /// @notice Opens Uniswap v3 or v4 through the enclave's Sendra account.
+    ///         `usdcAmount` stays argument 0 so the enclave rule can cap it.
+    ///         `token0`, `token1` and `fee` are static words the ruler can allowlist.
+    ///         They must match the nested input, or the operator could show one pair and mint another.
+    ///         The account pulls `usdcAmount`. v4 is `protocol` 2 plus `tickSpacing` and `hooks`.
     function provideLiquidity(
-            uint256 usdcAmount,
-            uint256 amount0,
-            uint256 amount1,
-            UniswapLib.Protocol protocol,
-            int24 tickLower,
-            int24 tickUpper,
-            uint24 fee,
-            address token0, 
-            address token1,
-            UniswapLib.SwapInput calldata swapInput0,
-            UniswapLib.SwapInput calldata swapInput1
-        ) public onlyNotPaused {
-
-            address liquidityOrchestrator = ISendraAddressProvider(addressProvider).getAddress("LiquidityOrchestratorEvo");
-            
-            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).approve(liquidityOrchestrator, usdcAmount);
-            
-            ILiquidityOrchestratorEvo executor = ILiquidityOrchestratorEvo(liquidityOrchestrator);
-
-            UniswapLib.ExecuteProvideLiquidityInput memory params = UniswapLib.ExecuteProvideLiquidityInput({
-                swapInput0: swapInput0,
-                swapInput1: swapInput1,
-                provideLiquidityInput: UniswapLib.ProvideLiquidityInput({
-                    protocol: protocol,
-                    token0: token0,
-                    token1: token1,
-                    recipient: address(this),
-                    user: msg.sender,
-                    amount0: amount0,
-                    amount1: amount1,
-                    tickLower: tickLower,
-                    tickUpper: tickUpper,
-                    fee: fee
-                }),
-                isSendraRecipient: false
-            });
-
-            (bytes[] memory positionData, uint8[] memory gFieldIdsProvider, int256[] memory gDeltasProvider) =
-                executor.provideLiquidity(params);
-
-            address accountingManager = ISendraAddressProvider(addressProvider).getAddress("AccountingManager");
-            AccountingManager(accountingManager).initializePositionForEnclave(positionData);
-            AccountingManager(accountingManager).applyGlobalPulseDeltas(msg.sender, gFieldIdsProvider, gDeltasProvider);
-
+        uint256 usdcAmount,
+        address token0,
+        address token1,
+        uint24 fee,
+        AccountLp.ExecuteProvideLiquidityInput calldata input
+    ) public onlyNotPaused returns (uint256 positionId) {
+        _matchLp(token0, token1, fee, input);
+        positionId = _provide(usdcAmount, input);
     }
 
     function provideLiquidityNoAccountingTest(
-            uint256 usdcAmount,
-            uint256 amount0,
-            uint256 amount1,
-            UniswapLib.Protocol protocol,
-            int24 tickLower,
-            int24 tickUpper,
-            uint24 fee,
-            address token0, 
-            address token1,
-            UniswapLib.SwapInput calldata swapInput0,
-            UniswapLib.SwapInput calldata swapInput1
-        ) public onlyNotPaused {
+        uint256 usdcAmount,
+        address token0,
+        address token1,
+        uint24 fee,
+        AccountLp.ExecuteProvideLiquidityInput calldata input
+    ) public onlyNotPaused returns (uint256 positionId) {
+        _matchLp(token0, token1, fee, input);
+        positionId = _provide(usdcAmount, input);
+    }
 
-            address liquidityOrchestrator = ISendraAddressProvider(addressProvider).getAddress("LiquidityOrchestratorEvo");
-            
-            IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).approve(liquidityOrchestrator, usdcAmount);
-            
-            ILiquidityOrchestratorEvo executor = ILiquidityOrchestratorEvo(liquidityOrchestrator);
+    function partialClose(uint256 uniId, uint256 positionId) public {
+        ISendraLpAccount(_lpAccount()).partialClose(AccountLp.PartialCloseInput({
+            uniId: uniId,
+            positionId: positionId,
+            user: address(this)
+        }));
+    }
 
-            UniswapLib.ExecuteProvideLiquidityInput memory params = UniswapLib.ExecuteProvideLiquidityInput({
-                swapInput0: swapInput0,
-                swapInput1: swapInput1,
-                provideLiquidityInput: UniswapLib.ProvideLiquidityInput({
-                    protocol: protocol,
-                    token0: token0,
-                    token1: token1,
-                    recipient: address(this),
-                    user: msg.sender,
-                    amount0: usdcAmount,
-                    amount1: amount1,
-                    tickLower: tickLower,
-                    tickUpper: tickUpper,
-                    fee: fee
-                }),
-                isSendraRecipient: false
-            });
-
-            executor.provideLiquidityNoAccountingTest(params);
-
+    function sellHeld(
+        uint256 positionId,
+        UniswapLib.SwapInput calldata swapInput0,
+        UniswapLib.SwapInput calldata swapInput1
+    ) public {
+        ISendraLpAccount(_lpAccount()).sellHeld(AccountLp.SellHeldInput({
+            positionId: positionId,
+            user: address(this),
+            swapInput0: swapInput0,
+            swapInput1: swapInput1
+        }));
     }
 
     function closePosition(uint256 positionId, UniswapLib.SwapInput calldata swapInput0, UniswapLib.SwapInput calldata swapInput1) public {
         ISendraStorage sendraStorage = ISendraStorage(ISendraAddressProvider(addressProvider).getAddress("SendraStorage"));
         SendraLib.Position memory position = sendraStorage.getUserPositionById(address(this), positionId);
-        uint128 uniId = abi.decode(position.positionData[9], (uint128));
+        uint256 uniId = abi.decode(position.positionData[9], (uint256));
 
-        LPCE.Enclave memory enclave = EnclavesStorage(ISendraAddressProvider(addressProvider).getAddress("EnclavesStorage"))
-            .getEnclaveByAddress(address(this));
-        address lender = enclave.lender;
-        address operator = enclave.operator;
-
-        ILiquidityOrchestratorEvo executor = ILiquidityOrchestratorEvo(
-            ISendraAddressProvider(addressProvider).getAddress("LiquidityOrchestratorEvo")
-        );
-
-        IUniswapV3PositionNFT(ISendraAddressProvider(addressProvider).getAddress("UniswapNFTPositionManager")).approve(address(executor), uniId);
-
-        UniswapLib.ExecuteWithdrawLiquidityAndCollectFees memory params = UniswapLib.ExecuteWithdrawLiquidityAndCollectFees({
-            withdrawLiquidityInput: UniswapLib.WithdrawLiquidityInput({
+        ISendraLpAccount(_lpAccount()).withdraw(AccountLp.ExecuteWithdrawLiquidityAndCollectFees({
+            withdrawInput: AccountLp.WithdrawInput({
                 uniId: uniId,
                 positionId: positionId,
                 user: address(this)
             }),
-            operator: operator,
             swapInput0: swapInput0,
             swapInput1: swapInput1
-        });
+        }));
+    }
 
-        SendraLib.Position memory closedPosition;
-        uint8[] memory gFieldIdsProvider;
-        int256[] memory gDeltasProvider;
+    function _matchLp(
+        address token0,
+        address token1,
+        uint24 fee,
+        AccountLp.ExecuteProvideLiquidityInput calldata input
+    ) internal pure {
+        if (
+            input.provideLiquidityInput.token0 != token0
+                || input.provideLiquidityInput.token1 != token1
+                || input.provideLiquidityInput.fee != fee
+        ) revert AmountMismatch();
+    }
 
-        if (msg.sender == lender) {
-            (, closedPosition, gFieldIdsProvider, gDeltasProvider) =
-                executor.withdrawLiquidityAndCollectFeesFromLender(params);
-        } else {
-            (, closedPosition, gFieldIdsProvider, gDeltasProvider) =
-                executor.withdrawLiquidityAndCollectFees(params);
-        }
+    function _provide(uint256 usdcAmount, AccountLp.ExecuteProvideLiquidityInput calldata input)
+        internal
+        returns (uint256 positionId)
+    {
+        uint256 pull = input.swapInput0.amountIn0 + input.swapInput1.amountIn0;
+        if (pull != usdcAmount) revert AmountMismatch();
 
-        address managerAddress = ISendraAddressProvider(addressProvider).getAddress("AccountingManager");
-        AccountingManager manager = AccountingManager(managerAddress);
+        address account = EnclaveAccounts.spot(addressProvider);
+        IERC20(ISendraAddressProvider(addressProvider).getAddress("USDC")).forceApprove(account, pull);
 
-        manager.manageFullPositionForEnclave(positionId, closedPosition);
-        manager.applyGlobalPulseDeltas(operator, gFieldIdsProvider, gDeltasProvider);
-        manager.decreaseGlobalPositionActivePositions(address(this));
+        AccountLp.ExecuteProvideLiquidityInput memory params = input;
+        params.provideLiquidityInput.user = address(this);
+        params.provideLiquidityInput.recipient = account;
+        positionId = ISendraLpAccount(account).provide(params);
+    }
+
+    function _lpAccount() internal view returns (address account) {
+        account = IAccountsManager(ISendraAddressProvider(addressProvider).getAddress("AccountsManager")).accountByOwner(address(this));
+        if (account == address(0)) revert NoSpotAccount();
     }
 
     function revokeEnclave() public onlyNotDeposited {
@@ -431,9 +395,9 @@ contract LiquidityLogic {
         emit CreditWithdrawn(lender, capitalOutToLender, operator, operatorProfit);
     }
 
-    function buySpot(uint256 usdcAmount, UniswapLib.SwapInput calldata input) external onlyNotPaused {
+    function buySpot(uint256 usdcAmount, address tokenOut, UniswapLib.SwapInput calldata input) external onlyNotPaused {
+        if (input.tokenOut != tokenOut) revert AmountMismatch();
         usdcAmount;
-        input;
         _desk();
     }
 
@@ -495,6 +459,19 @@ contract LiquidityLogic {
         buyAsset;
         collateralIsAsset;
         lpData;
+        _desk();
+    }
+
+    function openBasket(
+        address collateral,
+        uint256 usdcAmount,
+        UniswapLib.SwapInput calldata buyCollateral,
+        UniswapLib.BasketBuy[] calldata buys
+    ) external onlyNotPaused {
+        collateral;
+        usdcAmount;
+        buyCollateral;
+        buys;
         _desk();
     }
 
@@ -568,4 +545,6 @@ contract LiquidityLogic {
     error OpenEnclavePositionsNotClosed();
     error OperatorPositionAlreadyInitialized();
     error PositionNotActive();
+    error AmountMismatch();
+    error NoSpotAccount();
 }

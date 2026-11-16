@@ -10,34 +10,26 @@ import {LiquidityLogic} from "../src/core/execution/LiquidityLogic.sol";
 import {LiquidityOrchestratorEvo} from "../src/core/execution/LiquidityOrchestratorEvo.sol";
 import {LiquidityCreditEnclaveFactory} from "../src/core/factory/LiquidityCreditEnclaveFactory.sol";
 import {CapitalUnderManagement} from "../src/core/storage/CapitalUnderManagement.sol";
-import {IAddressProviderAdmin, IRolesAdmin, SendraDeployLib} from "./interfaces/SendraDeploy.sol";
+import { AdminQuorum, IQuorumProvider, IQuorumRoles } from "./AdminQuorum.sol";
 
 /**
  * @title DeployLPCE
- * @notice Deploys LP Credit Enclaves stack and registers it in Sendra AddressProvider + Roles.
+ * @notice Deploys the LP Credit Enclaves stack and registers it with three hot admins.
  *
- * Prerequisites (already deployed in Sendra core):
+ * Prerequisites already on the AddressProvider:
  *   Roles, SendraStorage, RPFPDeployer, UniversalExecutorFactory, RPFPStorage,
  *   USDC, LiquidityManager, SwapRouter, UniswapNFTPositionManager
  *
- * .env:
- *   ADMIN_PK           - deployer private key (must be Sendra Roles admin)
- *   ADDRESS_PROVIDER   - existing Sendra AddressProvider
+ * Run DeploySRPE.s.sol first. WSL, same shell:
+ *   forge script script/DeployLPCE.s.sol --rpc-url arbitrum
+ *   forge script script/DeployLPCE.s.sol --rpc-url arbitrum --broadcast
  *
- * Usage (WSL: export vars first — forge does not load .env automatically):
- *   set -a && source .env && set +a
- *   forge script script/DeployLPCE.s.sol:DeployLPCE --rpc-url arbitrum --broadcast -vvvv
- *   # or: forge script ... --rpc-url $RPC_URL --broadcast -vvvv
- *
- * Optional (skip deploy, only register existing addresses):
- *   ENCLAVES_STORAGE=0x...
- *   ACCESS_CONTROL_INTER=0x...
- *   ACCOUNTING_MANAGER=0x...
- *   LIQUIDITY_LOGIC=0x...
- *   LIQUIDITY_ORCHESTRATOR_EVO=0x...
- *   LIQUIDITY_CREDIT_ENCLAVE_FACTORY=0x...
+ * Optional (skip that deploy and register the given address):
+ *   ENCLAVES_STORAGE, ACCESS_CONTROL_INTER, ACCOUNTING_MANAGER,
+ *   CAPITAL_UNDER_MANAGEMENT, LIQUIDITY_LOGIC, LIQUIDITY_ORCHESTRATOR_EVO,
+ *   LIQUIDITY_CREDIT_ENCLAVE_FACTORY
  */
-contract DeployLPCE is Script {
+contract DeployLPCE is AdminQuorum {
     struct Deployed {
         EnclavesStorage enclavesStorage;
         AccessControlInter accessControlInter;
@@ -69,27 +61,29 @@ contract DeployLPCE is Script {
     ];
 
     function run() external {
-        uint256 adminPk = vm.envUint("ADMIN_PK");
-        address addressProviderAddr = vm.envAddress("ADDRESS_PROVIDER");
-        address deployer = vm.addr(adminPk);
-
-        ISendraAddressProvider ap = ISendraAddressProvider(addressProviderAddr);
-        IRolesAdmin roles = SendraDeployLib.roles(ap);
+        if (block.chainid != 42161) revert WrongChain();
+        IQuorumProvider provider = _provider();
+        IQuorumRoles roles = IQuorumRoles(provider.getAddress("Roles"));
+        address deployer = vm.addr(_keys()[0]);
 
         console2.log("=== LPCE Deploy ===");
         console2.log("Deployer:", deployer);
-        console2.log("AddressProvider:", addressProviderAddr);
+        console2.log("AddressProvider:", address(provider));
         console2.log("Deployer is Roles admin:", roles.checkAdmin(deployer));
 
-        _verifyPrerequisites(ap);
+        _verifyPrerequisites(ISendraAddressProvider(address(provider)));
 
-        vm.startBroadcast(adminPk);
-
-        Deployed memory d = _deployOrLoad(addressProviderAddr);
-        _registerInAddressProvider(IAddressProviderAdmin(addressProviderAddr), d);
-        _registerProtocolContracts(roles, d);
-
+        vm.startBroadcast(_keys()[0]);
+        Deployed memory d = _deployOrLoad(address(provider));
         vm.stopBroadcast();
+
+        _register(provider, roles, KEY_ENCLAVES_STORAGE, address(d.enclavesStorage), true);
+        _register(provider, roles, KEY_ACCESS_CONTROL, address(d.accessControlInter), true);
+        _register(provider, roles, KEY_ACCOUNTING_MANAGER, address(d.accountingManager), true);
+        _register(provider, roles, KEY_CAPITAL_UNDER_MANAGEMENT, address(d.capitalUnderManagement), true);
+        _register(provider, roles, KEY_LIQUIDITY_LOGIC, address(d.liquidityLogic), false);
+        _register(provider, roles, KEY_LIQUIDITY_ORCHESTRATOR_EVO, address(d.liquidityOrchestratorEvo), false);
+        _register(provider, roles, KEY_FACTORY, address(d.factory), true);
 
         _logSummary(d);
     }
@@ -191,38 +185,7 @@ contract DeployLPCE is Script {
         }
     }
 
-    function _registerInAddressProvider(IAddressProviderAdmin ap, Deployed memory d) internal {
-        console2.log("--- AddressProvider registration ---");
-
-        ap.setAddress(KEY_ENCLAVES_STORAGE, address(d.enclavesStorage));
-        ap.setAddress(KEY_ACCESS_CONTROL, address(d.accessControlInter));
-        ap.setAddress(KEY_ACCOUNTING_MANAGER, address(d.accountingManager));
-        ap.setAddress(KEY_CAPITAL_UNDER_MANAGEMENT, address(d.capitalUnderManagement));
-        ap.setAddress(KEY_LIQUIDITY_LOGIC, address(d.liquidityLogic));
-        ap.setAddress(KEY_LIQUIDITY_ORCHESTRATOR_EVO, address(d.liquidityOrchestratorEvo));
-        ap.setAddress(KEY_FACTORY, address(d.factory));
-    }
-
-    function _registerProtocolContracts(IRolesAdmin roles, Deployed memory d) internal {
-        console2.log("--- Roles allowContract ---");
-
-        _allowIfNeeded(roles, address(d.enclavesStorage), KEY_ENCLAVES_STORAGE);
-        _allowIfNeeded(roles, address(d.accessControlInter), KEY_ACCESS_CONTROL);
-        _allowIfNeeded(roles, address(d.accountingManager), KEY_ACCOUNTING_MANAGER);
-        _allowIfNeeded(roles, address(d.capitalUnderManagement), KEY_CAPITAL_UNDER_MANAGEMENT);
-        _allowIfNeeded(roles, address(d.factory), KEY_FACTORY);
-    }
-
-    function _allowIfNeeded(IRolesAdmin roles, address contractAddr, string memory name) internal {
-        if (roles.isProtocolContract(contractAddr)) {
-            console2.log("Already protocol:", name, contractAddr);
-            return;
-        }
-        roles.allowContract(contractAddr, name);
-        console2.log("allowContract:", name, contractAddr);
-    }
-
-    function _logSummary(Deployed memory d) internal view {
+    function _logSummary(Deployed memory d) internal pure {
         console2.log("=== Deployment summary ===");
         console2.log("EnclavesStorage:", address(d.enclavesStorage));
         console2.log("AccessControlInter:", address(d.accessControlInter));
@@ -232,4 +195,6 @@ contract DeployLPCE is Script {
         console2.log("LiquidityOrchestratorEvo:", address(d.liquidityOrchestratorEvo));
         console2.log("LiquidityCreditEnclaveFactory:", address(d.factory));
     }
+
+    error WrongChain();
 }

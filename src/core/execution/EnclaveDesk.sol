@@ -7,7 +7,7 @@ import { ISendraAddressProvider } from "../../interfaces/iSendraCore/ISendraAddr
 import { ISwapRouter } from "../../interfaces/iSendraCore/sendraUniExec/ISwapRouter.sol";
 import { UniswapLib } from "../../libs/uni.lib.sol";
 import { AccessControlInter } from "../storage/security/AccessControlInter.sol";
-import { EnclaveAccountOpener } from "./EnclaveAccountOpener.sol";
+import { EnclaveAccounts, IAccountsManager } from "../../libs/EnclaveAccounts.sol";
 
 interface IEnclaveAccount {
     function owner() external view returns (address);
@@ -29,6 +29,12 @@ interface IEnclaveAccount {
         UniswapLib.SwapInput calldata buyAsset,
         bool collateralIsAsset,
         bytes calldata lpData
+    ) external;
+    function openBasket(
+        address collateral,
+        uint256 usdcAmount,
+        UniswapLib.SwapInput calldata buyCollateral,
+        UniswapLib.BasketBuy[] calldata buys
     ) external;
     function close(uint256 positionId, uint256 fundAmount, UniswapLib.SwapInput calldata swap) external;
     function release(uint256 positionId) external;
@@ -55,11 +61,11 @@ contract EnclaveDesk {
         addressProvider = ISendraAddressProvider(_addressProvider);
     }
 
-    function buySpot(uint256 usdcAmount, UniswapLib.SwapInput calldata input) external {
+    function buySpot(uint256 usdcAmount, address tokenOut, UniswapLib.SwapInput calldata input) external {
         _guard();
         _requireCredit(usdcAmount);
-        if (input.amountIn0 != usdcAmount || input.tokenIn != _usdc()) revert AmountMismatch();
-        address account = EnclaveAccountOpener(addressProvider.getAddress("EnclaveAccountOpener")).spotAccount();
+        if (input.amountIn0 != usdcAmount || input.tokenIn != _usdc() || input.tokenOut != tokenOut) revert AmountMismatch();
+        address account = EnclaveAccounts.spot(address(addressProvider));
         _fund(account, usdcAmount);
         IEnclaveAccount(account).execute(input, true);
     }
@@ -67,7 +73,7 @@ contract EnclaveDesk {
     function sellSpot(UniswapLib.SwapInput calldata input) external {
         _guard();
         if (input.tokenOut != _usdc()) revert AmountMismatch();
-        address account = EnclaveAccountOpener(addressProvider.getAddress("EnclaveAccountOpener")).spotOf(address(this));
+        address account = IAccountsManager(addressProvider.getAddress("AccountsManager")).accountByOwner(address(this));
         if (account == address(0)) revert NoSpotAccount();
         _owned(account);
         IEnclaveAccount(account).execute(input, false);
@@ -117,6 +123,17 @@ contract EnclaveDesk {
         IEnclaveAccount(account).openLeveraged(asset, usdcAmount, borrowBps, buyAsset, collateralIsAsset, lpData);
     }
 
+    function openBasket(
+        address collateral,
+        uint256 usdcAmount,
+        UniswapLib.SwapInput calldata buyCollateral,
+        UniswapLib.BasketBuy[] calldata buys
+    ) external {
+        _guard();
+        address account = _freshAave(usdcAmount);
+        IEnclaveAccount(account).openBasket(collateral, usdcAmount, buyCollateral, buys);
+    }
+
     function closeStrategy(
         address account,
         uint256 positionId,
@@ -162,7 +179,7 @@ contract EnclaveDesk {
 
     function _freshAave(uint256 usdcAmount) internal returns (address account) {
         _requireCredit(usdcAmount);
-        account = EnclaveAccountOpener(addressProvider.getAddress("EnclaveAccountOpener")).openAaveAccount();
+        account = EnclaveAccounts.aave(address(addressProvider));
         _fund(account, usdcAmount);
     }
 

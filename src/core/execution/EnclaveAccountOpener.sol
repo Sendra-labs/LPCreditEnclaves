@@ -4,37 +4,24 @@ pragma solidity ^0.8.28;
 import { ISendraAddressProvider } from "../../interfaces/iSendraCore/ISendraAddressProvider.sol";
 import { AccessControlInter } from "../storage/security/AccessControlInter.sol";
 
-interface IAccountDeployerMin {
-    function deployMinimal(address owner) external returns (address);
-}
-
-interface IAccountAccessMin {
-    function setIsProtocolAccount(address account) external;
-}
-
-/// @notice Opens Sendra accounts owned by an enclave executor.
-///         Spot reuses one account. Each Aave strategy gets a fresh one.
-///         Must be a Sendra protocol contract: it calls AccountDeployer and AccountAccessControl.
+/// @notice Kept so the address stays in the provider.
+///         Accounts are opened by the enclave itself through AccountsManager.
+///         A call from this contract would register the opener as the owner, and LP would not see it.
 contract EnclaveAccountOpener {
     ISendraAddressProvider public immutable addressProvider;
-
-    mapping(address => address) public spotOf;
 
     constructor(address _addressProvider) {
         addressProvider = ISendraAddressProvider(_addressProvider);
     }
 
-    function spotAccount() external returns (address account) {
+    function spotAccount() external view returns (address) {
         _onlyEnclave();
-        account = spotOf[msg.sender];
-        if (account != address(0)) return account;
-        account = _deploy(msg.sender);
-        spotOf[msg.sender] = account;
+        revert OpenFromEnclave();
     }
 
-    function openAaveAccount() external returns (address account) {
+    function openAaveAccount() external view returns (address) {
         _onlyEnclave();
-        account = _deploy(msg.sender);
+        revert OpenFromEnclave();
     }
 
     function _onlyEnclave() internal view {
@@ -43,10 +30,6 @@ contract EnclaveAccountOpener {
         }
     }
 
-    function _deploy(address owner) internal returns (address account) {
-        account = IAccountDeployerMin(addressProvider.getAddress("AccountDeployer")).deployMinimal(owner);
-        IAccountAccessMin(addressProvider.getAddress("AccountAccessControl")).setIsProtocolAccount(account);
-    }
-
     error NotEnclave();
+    error OpenFromEnclave();
 }
